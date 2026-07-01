@@ -1,0 +1,128 @@
+[
+  {
+    "name": "Горутины и синхронизация",
+    "icon": "🌀",
+    "problems": [
+      {
+        "t": "Горутины не дождались main",
+        "d": "easy",
+        "desc": "Программа должна напечатать `done 0/1/2` из трёх горутин. Но обычно не выводит ничего. Почему и как починить?",
+        "buggy": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfor i := 0; i < 3; i++ {\n\t\tgo func(n int) {\n\t\t\tfmt.Println(\"done\", n)\n\t\t}(i)\n\t}\n\t// main возвращается сразу\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 3; i++ {\n\t\twg.Add(1)\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tfmt.Println(\"done\", n)\n\t\t}(i)\n\t}\n\twg.Wait()\n}",
+        "bug": "**Баг:** `main` запускает 3 горутины и тут же завершается — когда `main` возвращается, рантайм убивает все горутины. Чаще всего не выведется ничего (иногда что-то проскочит — это гонка).\n\n**Почему:** нет синхронизации, никто не ждёт завершения горутин.\n\n**Фикс:** `sync.WaitGroup` — `wg.Add(1)` до запуска, `defer wg.Done()` внутри горутины, `wg.Wait()` в конце. Альтернатива — дождаться через канал."
+      },
+      {
+        "t": "Гонка данных на счётчике",
+        "d": "easy",
+        "desc": "1000 горутин инкрементят общий счётчик. Ожидаем `1000`, но число каждый раз разное (и `go run -race` ругается). Исправь.",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar counter int\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tcounter++ // гонка\n\t\t}()\n\t}\n\twg.Wait()\n\tfmt.Println(counter)\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n\t\"sync/atomic\"\n)\n\nfunc main() {\n\tvar counter atomic.Int64\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 1000; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tcounter.Add(1)\n\t\t}()\n\t}\n\twg.Wait()\n\tfmt.Println(counter.Load())\n}",
+        "bug": "**Баг:** `counter++` — это read-modify-write без синхронизации. Две горутины читают одно значение, прибавляют, пишут обратно → часть инкрементов теряется.\n\n**Почему:** нет happens-before между доступами к `counter`; «работает» — везение тайминга, гонка есть всегда (`-race` её ловит).\n\n**Фикс:** `atomic.Int64` (lock-free, для одного числа — самый быстрый) или `sync.Mutex` вокруг `counter++`. Для одного счётчика — atomic предпочтительнее."
+      },
+      {
+        "t": "wg.Add внутри горутины",
+        "d": "medium",
+        "desc": "Хотим дождаться пяти горутин через WaitGroup, но `Wait()` иногда возвращается мгновенно и часть строк не печатается. Где ошибка?",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 5; i++ {\n\t\tgo func(n int) {\n\t\t\twg.Add(1) // Add внутри горутины\n\t\t\tdefer wg.Done()\n\t\t\tfmt.Println(n)\n\t\t}(i)\n\t}\n\twg.Wait()\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 5; i++ {\n\t\twg.Add(1) // Add до запуска горутины\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tfmt.Println(n)\n\t\t}(i)\n\t}\n\twg.Wait()\n}",
+        "bug": "**Баг:** `wg.Add(1)` вызывается уже внутри горутины. `wg.Wait()` в `main` может выполниться раньше, чем горутины успеют запуститься и сделать `Add` → счётчик ещё 0 → `Wait` возвращается мгновенно.\n\n**Почему:** гонка между `Add` (в горутинах) и `Wait` (в main). Документация прямо требует: `Add` с положительным дельтой — до старта горутины.\n\n**Фикс:** перенести `wg.Add(1)` в цикл, ПЕРЕД `go`."
+      },
+      {
+        "t": "Deadlock: буфер меньше числа писателей",
+        "d": "hard",
+        "desc": "5 горутин пишут в канал с буфером 3, потом main читает всё через range. Программа падает с `fatal error: all goroutines are asleep - deadlock`. Почини.",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tch := make(chan int, 3)\n\tvar wg sync.WaitGroup\n\twg.Add(5)\n\tfor i := 0; i < 5; i++ {\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tch <- n\n\t\t}(i)\n\t}\n\twg.Wait() // ждём ДО чтения\n\tfor v := range ch { // и без close\n\t\tfmt.Println(v)\n\t}\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tch := make(chan int, 3)\n\tvar wg sync.WaitGroup\n\twg.Add(5)\n\tfor i := 0; i < 5; i++ {\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tch <- n\n\t\t}(i)\n\t}\n\tgo func() {\n\t\twg.Wait()\n\t\tclose(ch) // закрываем после всех отправителей\n\t}()\n\tfor v := range ch { // читаем конкурентно с записью\n\t\tfmt.Println(v)\n\t}\n}",
+        "bug": "**Баг:** две проблемы сразу.\n1. Буфер 3, а пишут 5 горутин: 3 запишут, 2 заблокируются на `ch <- n` (буфер полон) → их `wg.Done()` не вызовется → `wg.Wait()` висит вечно, чтение не стартует.\n2. Даже если починить ожидание — `range ch` без `close(ch)` зависнет: range идёт до закрытия канала.\n\n**Фикс:** читать канал КОНКУРЕНТНО с записью, а `close(ch)` вызвать после `wg.Wait()` в отдельной горутине. Тогда буфер разгружается по мере чтения, а `range` завершится на `close`."
+      }
+    ]
+  },
+  {
+    "name": "Каналы",
+    "icon": "📡",
+    "problems": [
+      {
+        "t": "Отправка в закрытый канал",
+        "d": "medium",
+        "desc": "Продюсер шлёт числа, main через время закрывает канал и читает остаток. Периодически паника `send on closed channel`. Кто должен закрывать канал?",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"time\"\n)\n\nfunc main() {\n\tch := make(chan int)\n\tgo func() {\n\t\tfor i := 0; i < 5; i++ {\n\t\t\tch <- i\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t}()\n\ttime.Sleep(2 * time.Millisecond)\n\tclose(ch) // закрыл получатель, пока продюсер ещё пишет\n\tfor v := range ch {\n\t\tfmt.Println(v)\n\t}\n}",
+        "fix": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tch := make(chan int)\n\tgo func() {\n\t\tdefer close(ch) // закрывает отправитель, когда закончил\n\t\tfor i := 0; i < 5; i++ {\n\t\t\tch <- i\n\t\t}\n\t}()\n\tfor v := range ch {\n\t\tfmt.Println(v)\n\t}\n}",
+        "bug": "**Баг:** канал закрывает получатель (`main`), пока отправитель ещё пишет. Следующая `ch <- i` в закрытый канал → паника `send on closed channel`.\n\n**Правило:** закрывает **отправитель**, и только один. Получатель закрыть не может — отправитель об этом не узнает и упадёт.\n\n**Фикс:** `defer close(ch)` внутри горутины-отправителя. `range` в main сам завершится на закрытии. (При нескольких отправителях — координация через `WaitGroup` + закрытие после всех.)"
+      }
+    ]
+  },
+  {
+    "name": "Замыкания и указатели",
+    "icon": "🔁",
+    "problems": [
+      {
+        "t": "Захват переменной цикла в горутине",
+        "d": "easy",
+        "desc": "Три горутины должны напечатать 0, 1, 2. До Go 1.22 печатают `3 3 3`. Как сделать корректно в любой версии?",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 3; i++ {\n\t\twg.Add(1)\n\t\tgo func() {\n\t\t\tdefer wg.Done()\n\t\t\tfmt.Println(i) // i захвачена по ссылке\n\t\t}()\n\t}\n\twg.Wait()\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 3; i++ {\n\t\twg.Add(1)\n\t\tgo func(i int) { // передаём копию аргументом\n\t\t\tdefer wg.Done()\n\t\t\tfmt.Println(i)\n\t\t}(i)\n\t}\n\twg.Wait()\n}",
+        "bug": "**Баг:** горутины захватывают переменную цикла `i` **по ссылке**.\n- **До Go 1.22:** `i` одна на весь цикл → к моменту запуска горутин она уже 3 → печатает `3 3 3`.\n- **Go 1.22+:** у каждой итерации своя `i` → `0 1 2` (порядок не гарантирован).\n\n**Фикс (работает везде):** передать `i` аргументом горутины — `go func(i int){...}(i)`. Это создаёт копию на каждую итерацию независимо от версии Go. Старый приём — `i := i` в начале тела цикла."
+      },
+      {
+        "t": "Указатель на переменную цикла",
+        "d": "medium",
+        "desc": "Собираем срез указателей на элементы. До Go 1.22 все указывают на `30` → печатает `30 30 30`. Исправь, чтобы было `10 20 30`.",
+        "buggy": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tvar ptrs []*int\n\tfor _, v := range []int{10, 20, 30} {\n\t\tptrs = append(ptrs, &v) // &v — адрес одной переменной\n\t}\n\tfor _, p := range ptrs {\n\t\tfmt.Println(*p)\n\t}\n}",
+        "fix": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tvar ptrs []*int\n\tfor _, v := range []int{10, 20, 30} {\n\t\tv := v // своя копия на итерацию\n\t\tptrs = append(ptrs, &v)\n\t}\n\tfor _, p := range ptrs {\n\t\tfmt.Println(*p)\n\t}\n}",
+        "bug": "**Баг:** самая коварная версия ловушки захвата — храним не замыкание, а **указатель** на переменную цикла.\n- **До Go 1.22:** `v` одна на весь цикл, все `&v` смотрят на неё, в конце она = 30 → `30 30 30`.\n- **Go 1.22+:** у каждой итерации своя `v` → `10 20 30`.\n\n**Фикс (везде):** `v := v` перед `&v` — создаёт новую переменную на каждой итерации, у каждого указателя свой адрес."
+      }
+    ]
+  },
+  {
+    "name": "Map и слайсы",
+    "icon": "🗺️",
+    "problems": [
+      {
+        "t": "Конкурентная запись в map",
+        "d": "medium",
+        "desc": "100 горутин пишут в общий map. Программа падает с `fatal error: concurrent map writes`. Как защитить?",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tm := map[int]int{}\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 100; i++ {\n\t\twg.Add(1)\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tm[n] = n * n // гонка записи\n\t\t}(i)\n\t}\n\twg.Wait()\n\tfmt.Println(len(m))\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\nfunc main() {\n\tm := map[int]int{}\n\tvar mu sync.Mutex\n\tvar wg sync.WaitGroup\n\tfor i := 0; i < 100; i++ {\n\t\twg.Add(1)\n\t\tgo func(n int) {\n\t\t\tdefer wg.Done()\n\t\t\tmu.Lock()\n\t\t\tm[n] = n * n\n\t\t\tmu.Unlock()\n\t\t}(i)\n\t}\n\twg.Wait()\n\tfmt.Println(len(m))\n}",
+        "bug": "**Баг:** встроенный `map` не потокобезопасен. Конкурентная запись (или чтение+запись) → рантайм специально детектит и **роняет программу** с `concurrent map writes`, чтобы не было тихой порчи данных.\n\n**Почему так:** безопасность стоит производительности, а большинству map конкурентность не нужна — Go за неё не платит.\n\n**Фикс:** `sync.Mutex`/`RWMutex` вокруг доступа, либо `sync.Map` (для «много читаем, редко пишем»), либо шардирование."
+      },
+      {
+        "t": "append затирает соседний срез",
+        "d": "medium",
+        "desc": "Берём подсрез `base[0:2]` и добавляем элемент. Неожиданно меняется `base`: `[1 2 99 4 5]`. Почему и как избежать?",
+        "buggy": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tbase := []int{1, 2, 3, 4, 5}\n\ta := base[0:2]    // len 2, cap 5\n\ta = append(a, 99) // пишет в base[2]!\n\tfmt.Println(base) // [1 2 99 4 5]\n}",
+        "fix": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tbase := []int{1, 2, 3, 4, 5}\n\ta := base[0:2:2]  // cap ограничена 2 (full slice expr)\n\ta = append(a, 99) // cap исчерпан → новый массив\n\tfmt.Println(base) // [1 2 3 4 5]\n}",
+        "bug": "**Баг:** `a := base[0:2]` делит с `base` один backing array и наследует его cap (5). У `a` есть запас ёмкости, поэтому `append` пишет прямо в `base[2]` вместо выделения нового массива.\n\n**Почему:** append выделяет новый массив только когда cap исчерпан; иначе пишет в общий.\n\n**Фикс:** ограничить cap через full slice expression `base[0:2:2]` — тогда cap=2 уже заполнен, `append` вынужден создать новый массив, и `base` не пострадает. Альтернатива — явный `copy` в свежий срез."
+      }
+    ]
+  },
+  {
+    "name": "defer, panic, интерфейсы",
+    "icon": "🛡️",
+    "problems": [
+      {
+        "t": "defer в цикле — утечка ресурсов",
+        "d": "medium",
+        "desc": "Обрабатываем список файлов, каждый закрываем через defer. На длинном списке копятся открытые дескрипторы до конца функции. Почини.",
+        "buggy": "package main\n\nimport \"os\"\n\nfunc processAll(files []string) error {\n\tfor _, name := range files {\n\t\tf, err := os.Open(name)\n\t\tif err != nil {\n\t\t\treturn err\n\t\t}\n\t\tdefer f.Close() // сработает в конце processAll, не итерации\n\t\t_ = f\n\t}\n\treturn nil\n}\n\nfunc main() {\n\t_ = processAll([]string{\"a.txt\", \"b.txt\"})\n}",
+        "fix": "package main\n\nimport \"os\"\n\nfunc processOne(name string) error {\n\tf, err := os.Open(name)\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer f.Close() // сработает при выходе из processOne — на каждой итерации\n\t_ = f\n\treturn nil\n}\n\nfunc processAll(files []string) error {\n\tfor _, name := range files {\n\t\tif err := processOne(name); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\treturn nil\n}\n\nfunc main() {\n\t_ = processAll([]string{\"a.txt\", \"b.txt\"})\n}",
+        "bug": "**Баг:** `defer` привязан к выходу из **функции**, а не итерации цикла. В длинном цикле все `f.Close()` откладываются до конца `processAll` → одновременно открыты сотни файлов/коннектов, можно упереться в лимит дескрипторов.\n\n**Фикс:** вынести тело цикла в отдельную функцию `processOne` — тогда `defer f.Close()` сработает при возврате из неё, то есть на каждой итерации. Альтернатива — закрывать явно `f.Close()` вместо defer (но тогда легко забыть при `return`/`panic`)."
+      },
+      {
+        "t": "recover не ловит панику из горутины",
+        "d": "hard",
+        "desc": "В main стоит defer-recover, а паникует дочерняя горутина. Процесс всё равно падает целиком. Почему recover не сработал?",
+        "buggy": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tdefer func() {\n\t\tif r := recover(); r != nil {\n\t\t\tfmt.Println(\"recovered:\", r)\n\t\t}\n\t}()\n\tgo func() {\n\t\tpanic(\"boom in goroutine\") // паника в ДРУГОЙ горутине\n\t}()\n\tselect {} // ждём\n}",
+        "fix": "package main\n\nimport \"fmt\"\n\nfunc main() {\n\tdone := make(chan struct{})\n\tgo func() {\n\t\tdefer close(done)\n\t\tdefer func() { // recover в ТОЙ ЖЕ горутине\n\t\t\tif r := recover(); r != nil {\n\t\t\t\tfmt.Println(\"recovered:\", r)\n\t\t\t}\n\t\t}()\n\t\tpanic(\"boom in goroutine\")\n\t}()\n\t<-done\n}",
+        "bug": "**Баг:** `recover()` ловит панику **только в defer той же горутины**. Паника в дочерней горутине не имеет обработчика → роняет весь процесс, defer в `main` бесполезен.\n\n**Почему:** у каждой горутины свой стек; паника раскручивает только его, не перепрыгивая в родителя.\n\n**Фикс:** ставить `defer func(){ recover() }()` на входе в каждую горутину, которая не должна ронять сервис (типичный паттерн для воркеров/хендлеров)."
+      },
+      {
+        "t": "Ловушка nil-интерфейса",
+        "d": "hard",
+        "desc": "Функция возвращает `error`. При успехе ожидаем `err != nil` == false, но получаем true. Классика, на которой сыпятся мидлы.",
+        "buggy": "package main\n\nimport \"fmt\"\n\ntype MyErr struct{}\n\nfunc (e *MyErr) Error() string { return \"boom\" }\n\nfunc do(ok bool) error {\n\tvar e *MyErr // типизированный nil-указатель\n\tif !ok {\n\t\te = &MyErr{}\n\t}\n\treturn e // всегда возвращаем *MyErr\n}\n\nfunc main() {\n\terr := do(true)\n\tfmt.Println(err != nil) // ожидаем false → а тут true\n}",
+        "fix": "package main\n\nimport \"fmt\"\n\ntype MyErr struct{}\n\nfunc (e *MyErr) Error() string { return \"boom\" }\n\nfunc do(ok bool) error {\n\tif !ok {\n\t\treturn &MyErr{}\n\t}\n\treturn nil // явный nil интерфейса\n}\n\nfunc main() {\n\terr := do(true)\n\tfmt.Println(err != nil) // false\n}",
+        "bug": "**Баг:** интерфейс — это пара **(тип, значение)**. nil-интерфейс — когда nil и тип, и значение. Здесь возвращается `*MyErr` со значением nil: тип = `*MyErr` (не nil!), значение = nil → интерфейс `error` в целом **не равен nil**.\n\n**Почему `err != nil` == true:** сравнение с nil у интерфейса проверяет обе части; тип не пустой → не nil.\n\n**Фикс:** возвращать `return nil` напрямую, а не типизированный nil-указатель. Не объявлять `var e *MyErr` и возвращать его в конце."
+      }
+    ]
+  }
+]

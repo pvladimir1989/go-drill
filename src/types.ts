@@ -1,6 +1,6 @@
 export type Lang = 'python' | 'go' | 'rust' | 'ts'
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type Tab = 'leet' | 'iv' | 'go' | 'rp'
+export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug'
 
 export interface Problem {
   t: string
@@ -14,6 +14,12 @@ export interface Problem {
   info?: string
   /** Постановка задачи (markdown) — вкладки go/rp */
   task?: string
+  /** Код с багом (Go) — вкладка bug */
+  buggy?: string
+  /** Исправленный код (Go) — вкладка bug */
+  fix?: string
+  /** Разбор бага (markdown): что не так + почему + фикс — вкладка bug */
+  bug?: string
   /** Ссылка на источник задачи */
   src?: string
   // injected at runtime when a problem is opened:

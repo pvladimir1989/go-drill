@@ -22,6 +22,7 @@ const TABS: { k: Tab; l: string }[] = [
   { k: 'iv', l: '🎯 Собеседования' },
   { k: 'go', l: '🧩 Go-задачи' },
   { k: 'rp', l: '📚 Go Practice' },
+  { k: 'bug', l: '🐛 Найди баг' },
 ]
 const RATIOS = [{ l: '20%', v: 0.2 }, { l: '35%', v: 0.35 }, { l: '55%', v: 0.55 }]
 const GRANS: { k: Gran; l: string }[] = [{ k: 'tok', l: 'слова' }, { k: 'line', l: 'строки' }]
@@ -115,6 +116,7 @@ export default function App() {
   const openP = useCallback((p: Problem) => {
     setSelP(p); setMode('view'); setSearch(''); setBlanks(new Set()); setAns({}); setShowR(false); setSolOpen(false)
     if ((tab === 'go' || tab === 'rp') && p.go) setLang('go')
+    else if (tab === 'bug') setLang('go')
     else if (!p[lang]) { const fl = LANGS.find((l) => p[l]); if (fl) setLang(fl) }
   }, [lang, tab])
 
@@ -193,6 +195,52 @@ export default function App() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- BUG (find-the-bug: buggy code → reveal fix) ----------
+  if (tab === 'bug' && selP.buggy) {
+    const hl = (src: string) =>
+      tokenize(src, 'go').map((t, idx) => {
+        if (t.type === 'newline') return <br key={idx} />
+        if (t.type === 'ws') return <span key={idx}>{t.value}</span>
+        return <span key={idx} style={{ color: SY[t.type] || '#888' }}>{t.value}</span>
+      })
+    const preStyle: CSSProperties = { border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '14px 12px' : '18px 22px', margin: 0, overflowX: 'auto', fontSize: mob ? 12 : 13.5, lineHeight: 1.7, WebkitOverflowScrolling: 'touch' }
+    return (
+      <div style={BS}>
+        <div style={{ padding: `${mob ? 10 : 12}px ${px}px`, borderBottom: '1px solid #1a1a1f', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, background: '#0f0f14', position: 'sticky', top: 0, zIndex: 10 }}>
+          <button onClick={() => setSelP(null)} style={{ background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: mob ? '6px 10px' : '4px 10px', fontSize: 12, fontFamily: 'inherit' }}>←</button>
+          <span style={{ fontSize: mob ? 13 : 15, flex: 1, minWidth: 0, fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🐛 {selP.t}</span>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: DC[selP.d].bg, color: DC[selP.d].t, border: `1px solid ${DC[selP.d].b}` }}>{selP.d}</span>
+        </div>
+        <div style={{ maxWidth: 820, margin: '0 auto', padding: `${mob ? 16 : 28}px ${px}px` }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#ef4444', fontWeight: 600, marginBottom: 6 }}>Найди ошибку · Go</div>
+          {selP.desc && <div style={{ fontSize: mob ? 13.5 : 14, color: '#cfcfcf', marginBottom: 14 }}><Md src={selP.desc} /></div>}
+          <pre style={{ ...preStyle, background: '#150f11' }}>{hl(selP.buggy)}</pre>
+          {!solOpen ? (
+            <div style={{ marginTop: 24, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button onClick={() => setSolOpen(true)} style={{ padding: '10px 18px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', background: '#f59e0b', color: '#000', border: 'none', fontWeight: 600 }}>Показать решение →</button>
+              <span style={{ fontSize: 12, color: '#555' }}>сначала найди баг сам, потом сверься</span>
+              {selP.src && <a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none', marginLeft: 'auto' }}>источник ↗</a>}
+            </div>
+          ) : (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#4ade80', fontWeight: 600 }}>✅ Исправление · Go</span>
+                <button onClick={() => setSolOpen(false)} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontFamily: 'inherit' }}>Скрыть</button>
+              </div>
+              {selP.fix && <pre style={{ ...preStyle, background: '#0d1810' }}>{hl(selP.fix)}</pre>}
+              {selP.bug && (
+                <aside style={{ marginTop: 16, background: '#0d0d12', border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '16px 18px' : '18px 22px', fontSize: 13, color: '#b8b8b8' }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#666', fontWeight: 600, marginBottom: 8 }}>Разбор</div>
+                  <Md src={selP.bug} />
+                </aside>
+              )}
+            </div>
+          )}
         </div>
       </div>
     )
