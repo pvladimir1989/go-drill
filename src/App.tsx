@@ -23,6 +23,7 @@ const TABS: { k: Tab; l: string }[] = [
   { k: 'go', l: '🧩 Go-задачи' },
   { k: 'rp', l: '📚 Go Practice' },
   { k: 'bug', l: '🐛 Найди баг' },
+  { k: 'arch', l: '🏛 Архитектура' },
 ]
 const RATIOS = [{ l: '20%', v: 0.2 }, { l: '35%', v: 0.35 }, { l: '55%', v: 0.55 }]
 const GRANS: { k: Gran; l: string }[] = [{ k: 'tok', l: 'слова' }, { k: 'line', l: 'строки' }]
@@ -53,6 +54,7 @@ export default function App() {
   const [done, setDone] = useState<Set<string>>(new Set())
   const [panel, setPanel] = useState(true)
   const [solOpen, setSolOpen] = useState(false)
+  const [archPick, setArchPick] = useState<number | null>(null)
   const refs = useRef<Record<number, HTMLInputElement | null>>({})
 
   useEffect(() => {
@@ -114,7 +116,7 @@ export default function App() {
   }, [mode])
 
   const openP = useCallback((p: Problem) => {
-    setSelP(p); setMode('view'); setSearch(''); setBlanks(new Set()); setAns({}); setShowR(false); setSolOpen(false)
+    setSelP(p); setMode('view'); setSearch(''); setBlanks(new Set()); setAns({}); setShowR(false); setSolOpen(false); setArchPick(null)
     if ((tab === 'go' || tab === 'rp') && p.go) setLang('go')
     else if (tab === 'bug') setLang('go')
     else if (!p[lang]) { const fl = LANGS.find((l) => p[l]); if (fl) setLang(fl) }
@@ -195,6 +197,77 @@ export default function App() {
               )}
             </div>
           ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- ARCH (system-design MCQ: diagram → pick missing component) ----------
+  if (tab === 'arch' && selP.options) {
+    const opts = selP.options
+    const picked = archPick !== null
+    const chosen = picked ? opts[archPick] : null
+    const diagStyle: CSSProperties = { border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '14px 12px' : '18px 22px', margin: 0, overflowX: 'auto', fontSize: mob ? 11.5 : 13, lineHeight: 1.7, WebkitOverflowScrolling: 'touch', whiteSpace: 'pre' }
+    const renderDiagram = (src: string) => src.split('\n').map((line, i) => {
+      const warn = /[⚠✘]/.test(line)
+      const good = /[✔]/.test(line) && !warn
+      return <div key={i} style={{ color: warn ? '#f87171' : good ? '#4ade80' : '#9ca3af' }}>{line || ' '}</div>
+    })
+    const pick = (i: number) => {
+      if (picked) return
+      setArchPick(i)
+      if (opts[i].ok && selP.category) setDone((p) => new Set([...p, `arch-${selP.category}-${selP.t}`]))
+    }
+    return (
+      <div style={BS}>
+        <div style={{ padding: `${mob ? 10 : 12}px ${px}px`, borderBottom: '1px solid #1a1a1f', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, background: '#0f0f14', position: 'sticky', top: 0, zIndex: 10 }}>
+          <button onClick={() => setSelP(null)} style={{ background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: mob ? '6px 10px' : '4px 10px', fontSize: 12, fontFamily: 'inherit' }}>←</button>
+          <span style={{ fontSize: mob ? 13 : 15, flex: 1, minWidth: 0, fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🏛 {selP.t}</span>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: DC[selP.d].bg, color: DC[selP.d].t, border: `1px solid ${DC[selP.d].b}` }}>{selP.d}</span>
+        </div>
+        <div style={{ maxWidth: 820, margin: '0 auto', padding: `${mob ? 16 : 28}px ${px}px` }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#f59e0b', fontWeight: 600, marginBottom: 6 }}>Схема · проблема</div>
+          {selP.diagram && <pre style={{ ...diagStyle, background: '#121016' }}>{renderDiagram(selP.diagram)}</pre>}
+          {selP.question && <div style={{ fontSize: mob ? 14 : 15, color: '#e8e6e3', fontWeight: 600, margin: '20px 0 12px' }}>{selP.question}</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {opts.map((o, i) => {
+              const isChosen = archPick === i
+              const reveal = picked && (o.ok || isChosen)
+              const bg = !picked ? '#111116' : o.ok ? '#0d2818' : isChosen ? '#2a0a0a' : '#111116'
+              const bd = !picked ? '#222' : o.ok ? '#166534' : isChosen ? '#7f1d1d' : '#1a1a1f'
+              return (
+                <div key={i}>
+                  <button onClick={() => pick(i)} disabled={picked} style={{ width: '100%', textAlign: 'left', padding: mob ? '11px 13px' : '12px 16px', borderRadius: 8, fontSize: mob ? 13 : 13.5, fontFamily: 'inherit', cursor: picked ? 'default' : 'pointer', background: bg, color: '#e8e6e3', border: `1px solid ${bd}`, display: 'flex', alignItems: 'flex-start', gap: 10, lineHeight: 1.5 }}>
+                    <span style={{ color: '#666', fontWeight: 700, flexShrink: 0 }}>{picked && o.ok ? '✓' : picked && isChosen ? '✗' : String.fromCharCode(65 + i)}</span>
+                    <span style={{ flex: 1 }}><Md src={o.t} /></span>
+                  </button>
+                  {reveal && o.note && <div style={{ fontSize: 12, color: o.ok ? '#86efac' : '#d1a3a3', padding: '6px 16px 2px 40px', lineHeight: 1.55 }}><Md src={o.note} /></div>}
+                </div>
+              )
+            })}
+          </div>
+          {picked && (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ fontSize: 13, color: chosen?.ok ? '#4ade80' : '#f87171', fontWeight: 600, marginBottom: 16 }}>{chosen?.ok ? '✓ Верно' : '✗ Не оптимально — смотри разбор'}</div>
+              {selP.after && (
+                <>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#4ade80', fontWeight: 600, marginBottom: 6 }}>Схема · после</div>
+                  <pre style={{ ...diagStyle, background: '#0d1810' }}>{renderDiagram(selP.after)}</pre>
+                </>
+              )}
+              {selP.bug && (
+                <aside style={{ marginTop: 16, background: '#0d0d12', border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '16px 18px' : '18px 22px', fontSize: 13, color: '#b8b8b8' }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#666', fontWeight: 600, marginBottom: 8 }}>Разбор</div>
+                  <Md src={selP.bug} />
+                  {selP.src && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a1a1f' }}><a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none' }}>📎 источник: {selP.src.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗</a></div>}
+                </aside>
+              )}
+              <div style={{ marginTop: 16, display: 'flex', gap: 10 }}>
+                <button onClick={() => setArchPick(null)} style={{ padding: '8px 16px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', background: '#111116', color: '#888', border: '1px solid #222' }}>↻ Заново</button>
+                <button onClick={() => setSelP(null)} style={{ padding: '8px 16px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', background: '#f59e0b', color: '#000', border: 'none', fontWeight: 600 }}>К списку →</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     )

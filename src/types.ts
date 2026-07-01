@@ -1,6 +1,12 @@
 export type Lang = 'python' | 'go' | 'rust' | 'ts'
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug'
+export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug' | 'arch'
+
+export interface ArchOption {
+  t: string
+  ok?: boolean
+  note?: string
+}
 
 export interface Problem {
   t: string
@@ -20,6 +26,14 @@ export interface Problem {
   fix?: string
   /** Разбор бага (markdown): что не так + почему + фикс — вкладка bug */
   bug?: string
+  /** ASCII-схема «до» (проблема) — вкладка arch */
+  diagram?: string
+  /** Вопрос MCQ — вкладка arch */
+  question?: string
+  /** Варианты ответа — вкладка arch */
+  options?: ArchOption[]
+  /** ASCII-схема «после» (с добавленным компонентом) — вкладка arch */
+  after?: string
   /** Ссылка на источник задачи */
   src?: string
   // injected at runtime when a problem is opened:
