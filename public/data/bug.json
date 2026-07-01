@@ -124,5 +124,110 @@
         "bug": "**Баг:** интерфейс — это пара **(тип, значение)**. nil-интерфейс — когда nil и тип, и значение. Здесь возвращается `*MyErr` со значением nil: тип = `*MyErr` (не nil!), значение = nil → интерфейс `error` в целом **не равен nil**.\n\n**Почему `err != nil` == true:** сравнение с nil у интерфейса проверяет обе части; тип не пустой → не nil.\n\n**Фикс:** возвращать `return nil` напрямую, а не типизированный nil-указатель. Не объявлять `var e *MyErr` и возвращать его в конце."
       }
     ]
+  },
+  {
+    "name": "net/http — реальные грабли",
+    "icon": "🌐",
+    "problems": [
+      {
+        "t": "resp.Body не закрыт → утечка соединений",
+        "d": "medium",
+        "desc": "Функция качает URL в цикле. Под нагрузкой сервис упирается в лимит открытых сокетов/файловых дескрипторов, растёт число горутин. Что забыли?",
+        "buggy": "package main\n\nimport (\n\t\"io\"\n\t\"net/http\"\n)\n\nfunc fetch(url string) ([]byte, error) {\n\tresp, err := http.Get(url)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn io.ReadAll(resp.Body) // Body не закрыт\n}\n\nfunc main() {\n\tfor i := 0; i < 1000; i++ {\n\t\t_, _ = fetch(\"http://example.com\")\n\t}\n}",
+        "fix": "package main\n\nimport (\n\t\"io\"\n\t\"net/http\"\n)\n\nfunc fetch(url string) ([]byte, error) {\n\tresp, err := http.Get(url)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\tdefer resp.Body.Close() // всегда закрываем\n\treturn io.ReadAll(resp.Body)\n}\n\nfunc main() {\n\tfor i := 0; i < 1000; i++ {\n\t\t_, _ = fetch(\"http://example.com\")\n\t}\n}",
+        "bug": "**Баг:** тело ответа `resp.Body` не закрывается. Пока Body открыт, TCP-соединение занято и **не возвращается** в keep-alive пул. В цикле накапливаются висящие соединения + фоновые горутины `net/http` → исчерпание сокетов/дескрипторов, рост памяти.\n\n**Реальная классика:** документация `net/http` прямо требует закрывать Body, даже если тело не читаешь. Одна из самых частых причин «загадочных» утечек соединений в проде.\n\n**Фикс:** `defer resp.Body.Close()` сразу после проверки `err`. Хочешь переиспользовать keep-alive — ещё и дочитай Body до конца (`io.Copy(io.Discard, resp.Body)`) перед закрытием.",
+        "src": "https://pkg.go.dev/net/http#Client.Do"
+      },
+      {
+        "t": "defer resp.Body.Close() до проверки err",
+        "d": "medium",
+        "desc": "Похоже на правильный код — Body закрывается через defer. Но при сетевой ошибке сервис падает с nil pointer panic. Найди порядок.",
+        "buggy": "package main\n\nimport (\n\t\"io\"\n\t\"net/http\"\n)\n\nfunc fetch(url string) ([]byte, error) {\n\tresp, err := http.Get(url)\n\tdefer resp.Body.Close() // resp == nil при err\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\treturn io.ReadAll(resp.Body)\n}\n\nfunc main() {\n\t_, _ = fetch(\"http://nonexistent.invalid\")\n}",
+        "fix": "package main\n\nimport (\n\t\"io\"\n\t\"net/http\"\n)\n\nfunc fetch(url string) ([]byte, error) {\n\tresp, err := http.Get(url)\n\tif err != nil {\n\t\treturn nil, err // сначала проверяем ошибку\n\t}\n\tdefer resp.Body.Close() // resp гарантированно не nil\n\treturn io.ReadAll(resp.Body)\n}\n\nfunc main() {\n\t_, _ = fetch(\"http://nonexistent.invalid\")\n}",
+        "bug": "**Баг:** `defer resp.Body.Close()` стоит **до** проверки `err`. При ошибке запроса (`http.Get` вернул `err != nil`) `resp` равен `nil`, и отложенный `resp.Body` разыменует nil → `panic: runtime error: invalid memory address or nil pointer dereference`.\n\n**Контракт:** при `err != nil` у `http.Get`/`Client.Do` значение `resp` не определено (обычно nil) — трогать его нельзя.\n\n**Фикс:** сначала `if err != nil { return }`, и только потом `defer resp.Body.Close()`.",
+        "src": "https://github.com/securego/gosec/issues/925"
+      },
+      {
+        "t": "http.Client без таймаута",
+        "d": "medium",
+        "desc": "Клиент работает, но когда апстрим начинает медленно отвечать (или подвисает), запросы копятся, горутины не завершаются, память растёт. Знаменитая тема Cloudflare.",
+        "buggy": "package main\n\nimport \"net/http\"\n\nfunc newClient() *http.Client {\n\treturn &http.Client{} // нет таймаута — ждём вечно\n}\n\nfunc main() {\n\tc := newClient()\n\tresp, err := c.Get(\"http://slow.example\")\n\tif err != nil {\n\t\treturn\n\t}\n\tdefer resp.Body.Close()\n}",
+        "fix": "package main\n\nimport (\n\t\"net/http\"\n\t\"time\"\n)\n\nfunc newClient() *http.Client {\n\treturn &http.Client{Timeout: 10 * time.Second} // общий дедлайн запроса\n}\n\nfunc main() {\n\tc := newClient()\n\tresp, err := c.Get(\"http://slow.example\")\n\tif err != nil {\n\t\treturn\n\t}\n\tdefer resp.Body.Close()\n}",
+        "bug": "**Баг:** `&http.Client{}` (как и `http.DefaultClient`, `http.Get`) **не имеет таймаута**. Если сервер медленный или подвис, запрос висит бесконечно, удерживая горутину и соединение. Под нагрузкой — лавинообразный рост горутин и памяти, каскадная деградация.\n\n**Реальный источник:** гайд Cloudflare «The complete guide to Go net/http timeouts» (F. Valsorda) — обязательное чтение по проду.\n\n**Фикс:** задать `Timeout` у `http.Client` (общий дедлайн на весь запрос) и/или тонко — `context.WithTimeout` на запрос, плюс таймауты на транспорте (`DialContext`, `ResponseHeaderTimeout`).",
+        "src": "https://blog.cloudflare.com/the-complete-guide-to-golang-net-http-timeouts/"
+      },
+      {
+        "t": "Гонка на общем состоянии в хендлере",
+        "d": "medium",
+        "desc": "HTTP-хендлер считает запросы по путям в общей map. Под конкурентной нагрузкой сервис падает с `fatal error: concurrent map writes`. Почему и как чинить?",
+        "buggy": "package main\n\nimport (\n\t\"net/http\"\n\t\"strconv\"\n)\n\nvar counts = map[string]int{}\n\nfunc handler(w http.ResponseWriter, r *http.Request) {\n\tcounts[r.URL.Path]++ // хендлеры бегут в разных горутинах\n\tw.Write([]byte(strconv.Itoa(counts[r.URL.Path])))\n}\n\nfunc main() {\n\thttp.HandleFunc(\"/\", handler)\n\t_ = http.ListenAndServe(\":8080\", nil)\n}",
+        "fix": "package main\n\nimport (\n\t\"net/http\"\n\t\"strconv\"\n\t\"sync\"\n)\n\nvar (\n\tmu     sync.Mutex\n\tcounts = map[string]int{}\n)\n\nfunc handler(w http.ResponseWriter, r *http.Request) {\n\tmu.Lock()\n\tcounts[r.URL.Path]++\n\tn := counts[r.URL.Path]\n\tmu.Unlock()\n\tw.Write([]byte(strconv.Itoa(n)))\n}\n\nfunc main() {\n\thttp.HandleFunc(\"/\", handler)\n\t_ = http.ListenAndServe(\":8080\", nil)\n}",
+        "bug": "**Баг:** `net/http` обслуживает **каждый запрос в отдельной горутине**. Общая `counts` пишется без синхронизации → конкурентная запись в map, рантайм роняет процесс: `fatal error: concurrent map writes` (или порча данных / гонка на `-race`).\n\n**Почему легко упустить:** на локальном тесте с одним запросом всё «работает»; проблема вылезает только под параллельной нагрузкой.\n\n**Фикс:** защитить доступ `sync.Mutex`/`RWMutex`, либо `sync.Map`, либо `atomic` для счётчиков. И держать секцию под локом короткой (снять значение в локальную переменную, писать в ответ уже после Unlock).",
+        "src": "https://pkg.go.dev/net/http#HandlerFunc"
+      }
+    ]
+  },
+  {
+    "name": "Контекст и утечки горутин",
+    "icon": "⏱️",
+    "problems": [
+      {
+        "t": "context.WithTimeout без cancel()",
+        "d": "medium",
+        "desc": "Оборачиваем контекст таймаутом перед gRPC-вызовом, но `cancel` отбрасываем в `_`. `go vet` ругается lostcancel, а ресурсы текут. Исправь.",
+        "buggy": "package main\n\nimport (\n\t\"context\"\n\t\"time\"\n)\n\nfunc call(ctx context.Context) {\n\tctx, _ = context.WithTimeout(ctx, 2*time.Second) // cancel отброшен\n\t_ = ctx\n\t// ... вызов с ctx\n}\n\nfunc main() {\n\tfor i := 0; i < 100; i++ {\n\t\tcall(context.Background())\n\t}\n}",
+        "fix": "package main\n\nimport (\n\t\"context\"\n\t\"time\"\n)\n\nfunc call(ctx context.Context) {\n\tctx, cancel := context.WithTimeout(ctx, 2*time.Second)\n\tdefer cancel() // освобождаем сразу по выходу\n\t_ = ctx\n\t// ... вызов с ctx\n}\n\nfunc main() {\n\tfor i := 0; i < 100; i++ {\n\t\tcall(context.Background())\n\t}\n}",
+        "bug": "**Баг:** `context.WithTimeout` возвращает дочерний контекст **и** `cancel`. `cancel` отброшен в `_`. Дочерний контекст с таймером остаётся привязанным к дереву родителя, пока не сработает таймер (2с) или пока родитель не отменят → утечка ресурсов/таймеров. В долгоживущем `Background` без cancel это копится.\n\n**Инструмент:** `go vet` ловит это как **lostcancel** («the cancel function is not used on all paths»). В gRPC-обвязке — обязательный паттерн.\n\n**Фикс:** всегда `defer cancel()` сразу после `WithTimeout`/`WithCancel`. Вызвать cancel безопасно и когда операция успела завершиться — это no-op.",
+        "src": "https://pkg.go.dev/context#WithTimeout"
+      },
+      {
+        "t": "Early return → утечка горутин",
+        "d": "hard",
+        "desc": "Запускаем N горутин, ждём первый результат через select. Возвращаем первый — но N-1 горутин остаются висеть навсегда. Классическая утечка на небуферизованном канале.",
+        "buggy": "package main\n\nimport \"context\"\n\nfunc first(ctx context.Context, urls []string) (string, error) {\n\tch := make(chan string) // небуферизованный\n\tfor _, u := range urls {\n\t\tgo func(u string) {\n\t\t\tch <- fetch(u) // блок, если читатель ушёл\n\t\t}(u)\n\t}\n\tselect {\n\tcase r := <-ch:\n\t\treturn r, nil // прочли одно — остальные висят на ch<-\n\tcase <-ctx.Done():\n\t\treturn \"\", ctx.Err()\n\t}\n}\n\nfunc fetch(u string) string { return u }\n\nfunc main() { _, _ = first(context.Background(), []string{\"a\", \"b\", \"c\"}) }",
+        "fix": "package main\n\nimport \"context\"\n\nfunc first(ctx context.Context, urls []string) (string, error) {\n\tch := make(chan string, len(urls)) // буфер на всех отправителей\n\tfor _, u := range urls {\n\t\tgo func(u string) {\n\t\t\tch <- fetch(u) // никогда не блокируется\n\t\t}(u)\n\t}\n\tselect {\n\tcase r := <-ch:\n\t\treturn r, nil\n\tcase <-ctx.Done():\n\t\treturn \"\", ctx.Err()\n\t}\n}\n\nfunc fetch(u string) string { return u }\n\nfunc main() { _, _ = first(context.Background(), []string{\"a\", \"b\", \"c\"}) }",
+        "bug": "**Баг:** канал небуферизованный. Как только `select` прочитал **один** результат и функция вернулась, остальные `len(urls)-1` горутин навсегда заблокированы на `ch <- ...` — читателя больше нет. Каждый вызов `first` подтекает горутинами; в проде — монотонный рост `runtime.NumGoroutine()` и памяти.\n\n**Инструмент диагностики:** goroutine-профиль в `pprof` (число растёт и не падает).\n\n**Фикс:** буферизировать канал на число отправителей — `make(chan string, len(urls))`. Тогда каждая горутина точно отправит и завершится, даже если её значение никто не прочитал. Альтернатива — прокинуть отмену/`ctx` внутрь и в горутинах писать через `select { case ch<-…: case <-ctx.Done(): }`.",
+        "src": "https://rednafi.com/go/early-return-and-goroutine-leak/"
+      },
+      {
+        "t": "time.After в for-select → рост памяти",
+        "d": "hard",
+        "desc": "Воркер в цикле ждёт задачу или таймаут через `time.After`. При частом потоке задач память растёт, хотя утечки «объектов» нет. Где течёт?",
+        "buggy": "package main\n\nimport \"time\"\n\nfunc worker(work <-chan int) {\n\tfor {\n\t\tselect {\n\t\tcase w := <-work:\n\t\t\t_ = w\n\t\tcase <-time.After(time.Minute): // новый таймер каждую итерацию\n\t\t\treturn\n\t\t}\n\t}\n}\n\nfunc main() {\n\tch := make(chan int)\n\tclose(ch)\n\tworker(ch)\n}",
+        "fix": "package main\n\nimport \"time\"\n\nfunc worker(work <-chan int) {\n\tt := time.NewTimer(time.Minute)\n\tdefer t.Stop()\n\tfor {\n\t\tselect {\n\t\tcase w := <-work:\n\t\t\t_ = w\n\t\t\tif !t.Stop() {\n\t\t\t\t<-t.C // слить сработавший таймер (до Go 1.23)\n\t\t\t}\n\t\t\tt.Reset(time.Minute)\n\t\tcase <-t.C:\n\t\t\treturn\n\t\t}\n\t}\n}\n\nfunc main() {\n\tch := make(chan int)\n\tclose(ch)\n\tworker(ch)\n}",
+        "bug": "**Баг:** `time.After(time.Minute)` на **каждой** итерации создаёт новый `Timer`, а он **не собирается GC, пока не сработает** (через минуту). Если `work` приходит часто, за минуту накапливаются тысячи живых таймеров → рост памяти и нагрузка на планировщик, хотя явной «утечки объектов» не видно.\n\n**Официально:** доке `time.After` прямо сказано — таймер живёт до срабатывания; при заботе об эффективности используйте `NewTimer` + `Stop`.\n\n**Фикс:** создать **один** `time.NewTimer` вне цикла и переиспользовать через `Reset` (со `Stop`+сливом канала до Go 1.23; с 1.23 семантика `Reset`/`Stop` упрощена и слив не нужен).",
+        "src": "https://pkg.go.dev/time#After"
+      }
+    ]
+  },
+  {
+    "name": "gRPC-стримы",
+    "icon": "🔌",
+    "problems": [
+      {
+        "t": "Стрим: продюсер не привязан к отмене",
+        "d": "hard",
+        "desc": "Серверный стрим шлёт клиенту события из фоновой горутины-продюсера. Когда клиент отключается, `Send` возвращает ошибку и хендлер выходит — но продюсер остаётся жить вечно. Утечка горутин на каждый разорванный стрим.",
+        "buggy": "package main\n\nimport (\n\t\"context\"\n\t\"time\"\n)\n\ntype Stream interface {\n\tSend(v int) error\n\tContext() context.Context\n}\n\nfunc produce(ch chan<- int) {\n\tfor i := 0; ; i++ {\n\t\tch <- i // навсегда блокируется, когда читателя не станет\n\t\ttime.Sleep(time.Millisecond)\n\t}\n}\n\nfunc Subscribe(stream Stream) error {\n\tupdates := make(chan int)\n\tgo produce(updates) // не знает про отмену\n\tfor u := range updates {\n\t\tif err := stream.Send(u); err != nil {\n\t\t\treturn err // вышли, produce висит на updates<-\n\t\t}\n\t}\n\treturn nil\n}\n\nfunc main() { _ = Subscribe }",
+        "fix": "package main\n\nimport (\n\t\"context\"\n\t\"time\"\n)\n\ntype Stream interface {\n\tSend(v int) error\n\tContext() context.Context\n}\n\nfunc produce(ctx context.Context, ch chan<- int) {\n\tfor i := 0; ; i++ {\n\t\tselect {\n\t\tcase <-ctx.Done():\n\t\t\treturn // клиент ушёл — выходим\n\t\tcase ch <- i:\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t}\n}\n\nfunc Subscribe(stream Stream) error {\n\tctx := stream.Context()\n\tupdates := make(chan int)\n\tgo produce(ctx, updates)\n\tfor {\n\t\tselect {\n\t\tcase <-ctx.Done():\n\t\t\treturn ctx.Err()\n\t\tcase u := <-updates:\n\t\t\tif err := stream.Send(u); err != nil {\n\t\t\t\treturn err\n\t\t\t}\n\t\t}\n\t}\n}\n\nfunc main() { _ = Subscribe }",
+        "bug": "**Баг:** горутина `produce` не знает про отмену стрима. Когда клиент отключается, `stream.Send` возвращает ошибку и `Subscribe` выходит — но `produce` навсегда виснет на `updates <- i` (читателя больше нет). На каждый разорванный стрим — утекшая горутина; в gRPC-сервисе с тысячами клиентов это быстро съедает память.\n\n**Реальная тема:** утечки на стримах в gRPC — известная категория (см. grpc-go #2015): у каждой фоновой горутины должен быть гарантированный путь к выходу.\n\n**Фикс:** прокинуть `stream.Context()` в продюсера и слушать `ctx.Done()` в `select` и на отправке, и на приёме. Контекст серверного стрима отменяется, когда клиент уходит — это и есть сигнал остановки.",
+        "src": "https://github.com/grpc/grpc-go/issues/2015"
+      }
+    ]
+  },
+  {
+    "name": "sync",
+    "icon": "🔒",
+    "problems": [
+      {
+        "t": "sync.Mutex скопирован по значению",
+        "d": "medium",
+        "desc": "Счётчик с мьютексом, но метод объявлен на значении, а не указателе. Инкременты теряются (`n` всегда 0), а `go vet` ругается copylocks. Найди причину.",
+        "buggy": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\ntype Counter struct {\n\tmu sync.Mutex\n\tn  int\n}\n\nfunc (c Counter) Inc() { // value receiver копирует мьютекс и n\n\tc.mu.Lock()\n\tc.n++\n\tc.mu.Unlock()\n}\n\nfunc main() {\n\tc := Counter{}\n\tc.Inc()\n\tc.Inc()\n\tfmt.Println(c.n) // 0 — меняли копии\n}",
+        "fix": "package main\n\nimport (\n\t\"fmt\"\n\t\"sync\"\n)\n\ntype Counter struct {\n\tmu sync.Mutex\n\tn  int\n}\n\nfunc (c *Counter) Inc() { // pointer receiver — работаем с оригиналом\n\tc.mu.Lock()\n\tc.n++\n\tc.mu.Unlock()\n}\n\nfunc main() {\n\tc := Counter{}\n\tc.Inc()\n\tc.Inc()\n\tfmt.Println(c.n) // 2\n}",
+        "bug": "**Баг:** метод `Inc` объявлен на **значении** (`func (c Counter)`). При каждом вызове структура (вместе с `mu` и `n`) копируется — лок берётся на копию мьютекса, инкремент пишется в копию `n`, оригинал не меняется → `c.n` остаётся 0. Хуже того, копирование `sync.Mutex` ломает его инвариант (нельзя копировать после использования).\n\n**Инструмент:** `go vet` ловит это как **copylocks** («passes lock by value»).\n\n**Фикс:** pointer receiver — `func (c *Counter) Inc()`. Тип с мьютексом всегда используй через указатель и не копируй.",
+        "src": "https://pkg.go.dev/sync#Mutex"
+      }
+    ]
   }
 ]
