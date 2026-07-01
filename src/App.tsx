@@ -237,6 +237,7 @@ export default function App() {
                 <aside style={{ marginTop: 16, background: '#0d0d12', border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '16px 18px' : '18px 22px', fontSize: 13, color: '#b8b8b8' }}>
                   <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#666', fontWeight: 600, marginBottom: 8 }}>Разбор</div>
                   <Md src={selP.bug} />
+                  {selP.src && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a1a1f' }}><a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none' }}>📎 источник: {selP.src.replace(/^https?:\/\//, '')} ↗</a></div>}
                 </aside>
               )}
             </div>
