@@ -121,5 +121,65 @@
         "src": "https://realpython.com/async-io-python/"
       }
     ]
+  },
+  {
+    "name": "🎓 Senior asyncio (Habr)",
+    "icon": "🎓",
+    "problems": [
+      {
+        "t": "Свой awaitable через __await__",
+        "d": "medium",
+        "desc": "Объект реализует протокол `__await__`. Что напечатает `await`?",
+        "python": "import asyncio\n\nclass MyAwaitable:\n    def __await__(self):\n        yield\n        return 42\n\nasync def main():\n    result = await MyAwaitable()\n    print(result)\n\nasyncio.run(main())",
+        "out": "42",
+        "bug": "`await X` работает не только с корутинами, а с любым **awaitable** — объектом, у которого есть метод `__await__`, возвращающий итератор. `yield` внутри уступает управление циклу событий (как точка приостановки), а значение из `return` становится результатом `await`.\n\nИменно так под капотом устроены `Future`/`Task`: `async/await` — это синтаксический сахар над протоколом генераторов.",
+        "src": "https://habr.com/ru/articles/1011544/"
+      },
+      {
+        "t": "Semaphore ограничивает конкурентность",
+        "d": "hard",
+        "desc": "4 воркера, но семафор пропускает только 2 одновременно. В каком порядке enter/exit?",
+        "python": "import asyncio\n\nsem = asyncio.Semaphore(2)\n\nasync def worker(n):\n    async with sem:\n        print(f\"enter {n}\")\n        await asyncio.sleep(0.1)\n        print(f\"exit {n}\")\n\nasync def main():\n    await asyncio.gather(*(worker(i) for i in range(4)))\n\nasyncio.run(main())",
+        "out": "enter 0\nenter 1\nexit 0\nexit 1\nenter 2\nenter 3\nexit 2\nexit 3",
+        "bug": "`Semaphore(2)` разрешает войти в блок `async with sem` максимум **двум** корутинам одновременно. Воркеры 0 и 1 захватывают семафор сразу (`enter 0`, `enter 1`) и засыпают. 2 и 3 ждут на `async with`.\n\nЧерез 0.1s первые два выходят (`exit 0`, `exit 1`) и освобождают слоты — только тогда входят 2 и 3. Это базовый приём для **backpressure**: ограничить число одновременных запросов к внешнему сервису вместо создания тысяч задач разом.",
+        "src": "https://habr.com/ru/articles/1011544/"
+      },
+      {
+        "t": "Отмена задачи и finally",
+        "d": "hard",
+        "desc": "Задачу отменяют во время `sleep(10)`. Что успеет напечататься?",
+        "python": "import asyncio\n\nasync def worker():\n    try:\n        print(\"work start\")\n        await asyncio.sleep(10)\n        print(\"work done\")\n    finally:\n        print(\"cleanup\")\n\nasync def main():\n    task = asyncio.create_task(worker())\n    await asyncio.sleep(0.1)\n    task.cancel()\n    try:\n        await task\n    except asyncio.CancelledError:\n        print(\"cancelled caught\")\n\nasyncio.run(main())",
+        "out": "work start\ncleanup\ncancelled caught",
+        "bug": "`task.cancel()` бросает `CancelledError` **внутри** корутины в точке текущего `await` (здесь — `asyncio.sleep(10)`). Поэтому `work done` никогда не печатается, а `sleep` не досыпает свои 10 секунд.\n\nБлок `finally` **выполняется при отмене** — это правильное место для освобождения ресурсов (закрыть соединение, откатить транзакцию). Затем `CancelledError` пробрасывается в `await task` и ловится в `main`.",
+        "src": "https://habr.com/ru/articles/1011544/"
+      },
+      {
+        "t": "TaskGroup: одна упала — отменяет остальных",
+        "d": "hard",
+        "desc": "В `TaskGroup` две задачи: одна падает через 0.1s, вторая должна доработать за 0.2s. Что в выводе?",
+        "python": "import asyncio\n\nasync def ok():\n    await asyncio.sleep(0.2)\n    print(\"ok done\")\n\nasync def boom():\n    await asyncio.sleep(0.1)\n    raise ValueError(\"boom\")\n\nasync def main():\n    try:\n        async with asyncio.TaskGroup() as tg:\n            tg.create_task(ok())\n            tg.create_task(boom())\n    except* ValueError as eg:\n        print(\"caught:\", eg.exceptions[0])\n\nasyncio.run(main())",
+        "out": "caught: boom",
+        "bug": "`asyncio.TaskGroup` (Python 3.11+) реализует **структурную конкурентность**: если любая дочерняя задача падает, группа **отменяет все остальные** и не выходит из `async with`, пока они не завершатся.\n\n`boom()` падает на 0.1s → группа отменяет `ok()` ещё до её `sleep(0.2)`, поэтому `ok done` не печатается. Ошибки собираются в `ExceptionGroup`, который ловится через `except*`.",
+        "src": "https://habr.com/ru/articles/1011544/"
+      },
+      {
+        "t": "gather(return_exceptions=True)",
+        "d": "medium",
+        "desc": "Одна из корутин бросает исключение, но стоит `return_exceptions=True`. Что в `results`?",
+        "python": "import asyncio\n\nasync def ok():\n    return \"ok\"\n\nasync def boom():\n    raise ValueError(\"boom\")\n\nasync def main():\n    results = await asyncio.gather(ok(), boom(), return_exceptions=True)\n    print(results)\n\nasyncio.run(main())",
+        "out": "['ok', ValueError('boom')]",
+        "bug": "По умолчанию `gather` при первой ошибке **поднимает исключение** наружу (остальные результаты теряются). С `return_exceptions=True` исключение не поднимается, а **кладётся в список результатов** как обычный объект — на своём месте по порядку аргументов.\n\nУдобно, когда нужно дождаться всех и разобрать успехи/ошибки постфактум. Минус — легко забыть проверить, что элемент оказался `Exception`, а не результатом.",
+        "src": "https://habr.com/ru/articles/1011544/"
+      },
+      {
+        "t": "to_thread возвращает конкурентность",
+        "d": "hard",
+        "desc": "Два блокирующих вызова по 0.2s обёрнуты в `asyncio.to_thread`. Сколько займёт и что выведет?",
+        "python": "import asyncio\nimport time\n\ndef blocking(name):\n    time.sleep(0.2)   # честно блокирующий код\n    return name\n\nasync def main():\n    results = await asyncio.gather(\n        asyncio.to_thread(blocking, \"A\"),\n        asyncio.to_thread(blocking, \"B\"),\n    )\n    print(results)\n\nasyncio.run(main())",
+        "out": "['A', 'B']\n\n# суммарно ~0.2s, а не 0.4s",
+        "bug": "Это **лекарство** от ловушки «`time.sleep` блокирует цикл». `asyncio.to_thread` выполняет блокирующую функцию в **пуле потоков**, а `await` не даёт заморозить цикл событий. Оба вызова уходят в разные потоки и спят **параллельно** → общее время ~0.2s, а не 0.4s.\n\nТак оборачивают синхронные библиотеки (старые SDK, `requests`, драйверы БД без async), которые нельзя просто заменить на `await`. Для CPU-bound задач вместо потоков нужен `ProcessPoolExecutor` (из-за GIL).",
+        "src": "https://habr.com/ru/articles/1011544/"
+      }
+    ]
   }
 ]
