@@ -1,6 +1,6 @@
 export type Lang = 'python' | 'go' | 'rust' | 'ts'
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug' | 'arch'
+export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug' | 'arch' | 'out'
 
 export interface ArchOption {
   t: string
@@ -34,6 +34,8 @@ export interface Problem {
   options?: ArchOption[]
   /** ASCII-схема «после» (с добавленным компонентом) — вкладка arch */
   after?: string
+  /** Ожидаемый вывод в stdout — вкладка out («что выведет код») */
+  out?: string
   /** Ссылка на источник задачи */
   src?: string
   // injected at runtime when a problem is opened:

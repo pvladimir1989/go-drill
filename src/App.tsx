@@ -24,6 +24,7 @@ const TABS: { k: Tab; l: string }[] = [
   { k: 'rp', l: '📚 Go Practice' },
   { k: 'bug', l: '🐛 Найди баг' },
   { k: 'arch', l: '🏛 Архитектура' },
+  { k: 'out', l: '📟 Что выведет' },
 ]
 const RATIOS = [{ l: '20%', v: 0.2 }, { l: '35%', v: 0.35 }, { l: '55%', v: 0.55 }]
 const GRANS: { k: Gran; l: string }[] = [{ k: 'tok', l: 'слова' }, { k: 'line', l: 'строки' }]
@@ -119,6 +120,7 @@ export default function App() {
     setSelP(p); setMode('view'); setSearch(''); setBlanks(new Set()); setAns({}); setShowR(false); setSolOpen(false); setArchPick(null)
     if ((tab === 'go' || tab === 'rp') && p.go) setLang('go')
     else if (tab === 'bug') setLang('go')
+    else if (tab === 'out') setLang('python')
     else if (!p[lang]) { const fl = LANGS.find((l) => p[l]); if (fl) setLang(fl) }
   }, [lang, tab])
 
@@ -266,6 +268,54 @@ export default function App() {
                 <button onClick={() => setArchPick(null)} style={{ padding: '8px 16px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', background: '#111116', color: '#888', border: '1px solid #222' }}>↻ Заново</button>
                 <button onClick={() => setSelP(null)} style={{ padding: '8px 16px', borderRadius: 6, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', background: '#f59e0b', color: '#000', border: 'none', fontWeight: 600 }}>К списку →</button>
               </div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- OUT (predict the output: code → reveal stdout) ----------
+  if (tab === 'out' && selP.out !== undefined) {
+    const hlP = (src: string) =>
+      tokenize(src, 'python').map((t, idx) => {
+        if (t.type === 'newline') return <br key={idx} />
+        if (t.type === 'ws') return <span key={idx}>{t.value}</span>
+        return <span key={idx} style={{ color: SY[t.type] || '#888' }}>{t.value}</span>
+      })
+    const preStyle: CSSProperties = { border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '14px 12px' : '18px 22px', margin: 0, overflowX: 'auto', fontSize: mob ? 12 : 13.5, lineHeight: 1.7, WebkitOverflowScrolling: 'touch' }
+    const openSol = () => { setSolOpen(true); if (selP.category) setDone((p) => new Set([...p, `out-${selP.category}-${selP.t}`])) }
+    return (
+      <div style={BS}>
+        <div style={{ padding: `${mob ? 10 : 12}px ${px}px`, borderBottom: '1px solid #1a1a1f', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, background: '#0f0f14', position: 'sticky', top: 0, zIndex: 10 }}>
+          <button onClick={() => setSelP(null)} style={{ background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: mob ? '6px 10px' : '4px 10px', fontSize: 12, fontFamily: 'inherit' }}>←</button>
+          <span style={{ fontSize: mob ? 13 : 15, flex: 1, minWidth: 0, fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📟 {selP.t}</span>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: DC[selP.d].bg, color: DC[selP.d].t, border: `1px solid ${DC[selP.d].b}` }}>{selP.d}</span>
+        </div>
+        <div style={{ maxWidth: 820, margin: '0 auto', padding: `${mob ? 16 : 28}px ${px}px` }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#38bdf8', fontWeight: 600, marginBottom: 6 }}>Что выведет код? · Python</div>
+          {selP.desc && <div style={{ fontSize: mob ? 13.5 : 14, color: '#cfcfcf', marginBottom: 14 }}><Md src={selP.desc} /></div>}
+          {selP.python && <pre style={{ ...preStyle, background: '#0d1017' }}>{hlP(selP.python)}</pre>}
+          {!solOpen ? (
+            <div style={{ marginTop: 24, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button onClick={openSol} style={{ padding: '10px 18px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', background: '#38bdf8', color: '#000', border: 'none', fontWeight: 600 }}>Показать вывод →</button>
+              <span style={{ fontSize: 12, color: '#555' }}>сначала предскажи сам, потом сверься</span>
+              {selP.src && <a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none', marginLeft: 'auto' }}>источник ↗</a>}
+            </div>
+          ) : (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#4ade80', fontWeight: 600 }}>▶ Вывод (stdout)</span>
+                <button onClick={() => setSolOpen(false)} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontFamily: 'inherit' }}>Скрыть</button>
+              </div>
+              <pre style={{ ...preStyle, background: '#0d1810', color: '#86efac', whiteSpace: 'pre' }}>{selP.out}</pre>
+              {selP.bug && (
+                <aside style={{ marginTop: 16, background: '#0d0d12', border: '1px solid #1a1a1f', borderRadius: mob ? 8 : 10, padding: mob ? '16px 18px' : '18px 22px', fontSize: 13, color: '#b8b8b8' }}>
+                  <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#666', fontWeight: 600, marginBottom: 8 }}>Разбор</div>
+                  <Md src={selP.bug} />
+                  {selP.src && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a1a1f' }}><a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none' }}>📎 источник: {selP.src.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗</a></div>}
+                </aside>
+              )}
             </div>
           )}
         </div>

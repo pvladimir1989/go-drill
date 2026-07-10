@@ -19,7 +19,7 @@ export async function loadDataset(tab: Tab): Promise<Dataset> {
       .filter((c) => c.name === 'Concurrency')
       .map((c) => ({ name: 'Go · Concurrency', icon: '🧩', problems: c.problems.filter((p) => p.go && p.task) }))
   } else {
-    const file = tab === 'leet' ? 'leet' : tab === 'iv' ? 'iv' : tab === 'bug' ? 'bug' : tab === 'arch' ? 'arch' : 'rp'
+    const file = tab === 'leet' ? 'leet' : tab === 'iv' ? 'iv' : tab === 'bug' ? 'bug' : tab === 'arch' ? 'arch' : tab === 'out' ? 'out' : 'rp'
     data = await fetchJson(file)
   }
   cache[tab] = data

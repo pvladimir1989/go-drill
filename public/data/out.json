@@ -1,0 +1,125 @@
+[
+  {
+    "name": "🚦 Основы: sleep и gather",
+    "icon": "🚦",
+    "problems": [
+      {
+        "t": "count() × 3 через gather",
+        "d": "easy",
+        "desc": "Классический пример из статьи Real Python. Три корутины запускаются через `asyncio.gather`.",
+        "python": "import asyncio\n\nasync def count():\n    print(\"One\")\n    await asyncio.sleep(1)\n    print(\"Two\")\n\nasync def main():\n    await asyncio.gather(count(), count(), count())\n\nasyncio.run(main())",
+        "out": "One\nOne\nOne\nTwo\nTwo\nTwo",
+        "bug": "`gather` запускает все три корутины **конкурентно**. Каждая печатает `One`, доходит до `await asyncio.sleep(1)` и **уступает управление** циклу событий. Пока первая спит, успевают стартовать вторая и третья — отсюда три `One` подряд. Через ~1 секунду все три просыпаются и печатают `Two`.\n\nСравни с синхронной версией (`time.sleep` в обычной функции), где было бы `One/Two/One/Two/One/Two` и заняло бы 3 секунды вместо ~1.",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "Два await подряд (без gather)",
+        "d": "easy",
+        "desc": "Тот же `count()`, но без `gather` — просто два `await` один за другим.",
+        "python": "import asyncio\n\nasync def count():\n    print(\"One\")\n    await asyncio.sleep(1)\n    print(\"Two\")\n\nasync def main():\n    await count()\n    await count()\n\nasyncio.run(main())",
+        "out": "One\nTwo\nOne\nTwo",
+        "bug": "`await count()` **ждёт полного завершения** первой корутины, прежде чем начать вторую. Никакой конкурентности здесь нет — это последовательное выполнение, просто записанное через `async/await`.\n\nЧтобы получить конкурентность, нужен `gather`, `asyncio.create_task` или `TaskGroup`. Само по себе слово `async` не делает код параллельным.",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "create_task и код до первого await",
+        "d": "medium",
+        "desc": "Задачи создаются через `create_task`, но перед первым `await` есть синхронный `print`.",
+        "python": "import asyncio\n\nasync def work(name):\n    print(f\"{name} start\")\n    await asyncio.sleep(0.1)\n    print(f\"{name} done\")\n\nasync def main():\n    t1 = asyncio.create_task(work(\"A\"))\n    t2 = asyncio.create_task(work(\"B\"))\n    print(\"main\")\n    await t1\n    await t2\n\nasyncio.run(main())",
+        "out": "main\nA start\nB start\nA done\nB done",
+        "bug": "`create_task` **планирует** корутину, но не запускает её немедленно — задача начнёт выполняться только когда текущая корутина уступит управление на `await`.\n\nПоэтому синхронный `print(\"main\")` печатается **первым**. Затем `await t1` уступает управление циклу — стартуют обе задачи (`A start`, `B start`), обе спят 0.1s, потом печатают `done`.",
+        "src": "https://realpython.com/async-io-python/"
+      }
+    ]
+  },
+  {
+    "name": "🔀 Порядок выполнения",
+    "icon": "🔀",
+    "problems": [
+      {
+        "t": "Кто напечатает первым: разное время sleep",
+        "d": "medium",
+        "desc": "Три воркера с разной задержкой запущены конкурентно. В каком порядке печатают?",
+        "python": "import asyncio\n\nasync def worker(name, delay):\n    await asyncio.sleep(delay)\n    print(name)\n\nasync def main():\n    await asyncio.gather(\n        worker(\"slow\", 0.3),\n        worker(\"fast\", 0.1),\n        worker(\"mid\", 0.2),\n    )\n\nasyncio.run(main())",
+        "out": "fast\nmid\nslow",
+        "bug": "Порядок **печати** определяется временем пробуждения, а не порядком аргументов в `gather`. `fast` спит меньше всех (0.1s) → печатает первым, затем `mid` (0.2s), затем `slow` (0.3s).\n\nВажно не путать с порядком **возвращаемых значений** — тот как раз соответствует аргументам (см. следующую задачу).",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "Порядок результатов gather",
+        "d": "medium",
+        "desc": "Задачи завершаются в порядке B, C, A (по времени). А что попадёт в `results`?",
+        "python": "import asyncio\n\nasync def task(name, delay):\n    await asyncio.sleep(delay)\n    return name\n\nasync def main():\n    results = await asyncio.gather(\n        task(\"A\", 0.3),\n        task(\"B\", 0.1),\n        task(\"C\", 0.2),\n    )\n    print(results)\n\nasyncio.run(main())",
+        "out": "['A', 'B', 'C']",
+        "bug": "`asyncio.gather` **сохраняет порядок аргументов** в списке результатов, независимо от того, кто завершился раньше. `A` спал дольше всех, но стоит первым — потому что был первым аргументом.\n\nЭто ключевое отличие от `as_completed`, который отдаёт результаты по мере готовности (см. задачу «as_completed»).",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "as_completed: порядок готовности",
+        "d": "hard",
+        "desc": "Те же задачи, но проходим по ним через `asyncio.as_completed`.",
+        "python": "import asyncio\n\nasync def task(name, delay):\n    await asyncio.sleep(delay)\n    return name\n\nasync def main():\n    coros = [task(\"A\", 0.3), task(\"B\", 0.1), task(\"C\", 0.2)]\n    for fut in asyncio.as_completed(coros):\n        print(await fut)\n\nasyncio.run(main())",
+        "out": "B\nC\nA",
+        "bug": "`as_completed` возвращает итератор, который отдаёт задачи **в порядке их завершения**, а не в порядке передачи. `B` (0.1s) готов первым, потом `C` (0.2s), потом `A` (0.3s).\n\nИспользуй `as_completed`, когда хочешь обрабатывать результаты сразу по готовности (например, показывать прогресс), а `gather` — когда важен исходный порядок.",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "sleep(0) уступает управление",
+        "d": "hard",
+        "desc": "Что делает `await asyncio.sleep(0)` и как это влияет на чередование?",
+        "python": "import asyncio\n\nasync def a():\n    print(\"a1\")\n    await asyncio.sleep(0)\n    print(\"a2\")\n\nasync def b():\n    print(\"b1\")\n    await asyncio.sleep(0)\n    print(\"b2\")\n\nasync def main():\n    await asyncio.gather(a(), b())\n\nasyncio.run(main())",
+        "out": "a1\nb1\na2\nb2",
+        "bug": "`asyncio.sleep(0)` — идиома «уступи управление циклу событий, но не жди». `a()` печатает `a1`, на `sleep(0)` отдаёт управление → запускается `b()` и печатает `b1`, тоже уступает → возвращаемся в `a()` (`a2`), затем `b()` (`b2`).\n\nЭто способ дать другим корутинам поработать в середине долгой синхронной секции, не вводя реальную задержку.",
+        "src": "https://realpython.com/async-io-python/"
+      }
+    ]
+  },
+  {
+    "name": "🔗 Цепочки и генераторы",
+    "icon": "🔗",
+    "problems": [
+      {
+        "t": "Цепочка корутин (chaining)",
+        "d": "easy",
+        "desc": "Результат одной корутины подаётся во вторую.",
+        "python": "import asyncio\n\nasync def double(x):\n    await asyncio.sleep(0.1)\n    return x * 2\n\nasync def main():\n    a = await double(5)\n    b = await double(a)\n    print(a, b)\n\nasyncio.run(main())",
+        "out": "10 20",
+        "bug": "Корутины возвращают значения через `return`, а `await` разворачивает результат. `double(5)` → `10`, затем `double(10)` → `20`.\n\nЗдесь `await` обязателен: без него `a` был бы объектом корутины, а не числом (см. задачу «Забыли await»). Такое последовательное связывание — обычный паттерн, когда каждый шаг зависит от предыдущего.",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "Асинхронный генератор + async for",
+        "d": "medium",
+        "desc": "Асинхронный генератор yield-ит значения с задержкой, собираем их через async-comprehension.",
+        "python": "import asyncio\n\nasync def gen():\n    for i in range(3):\n        await asyncio.sleep(0.1)\n        yield i\n\nasync def main():\n    result = [x async for x in gen()]\n    print(result)\n\nasyncio.run(main())",
+        "out": "[0, 1, 2]",
+        "bug": "`async def` + `yield` = **асинхронный генератор**. Его нельзя перебрать обычным `for` — нужен `async for` (или `[x async for x in ...]`). Каждая итерация может делать `await`.\n\nВывод — обычный список `[0, 1, 2]`: генератор просто отдаёт значения по порядку, задержка `sleep(0.1)` на итоговый список не влияет, только на время выполнения.",
+        "src": "https://realpython.com/async-io-python/"
+      }
+    ]
+  },
+  {
+    "name": "⚠️ Ловушки",
+    "icon": "⚠️",
+    "problems": [
+      {
+        "t": "Забыли await",
+        "d": "medium",
+        "desc": "Частая ошибка новичков: вызвали корутину, но не сделали `await`. Что напечатает `print`?",
+        "python": "import asyncio\n\nasync def greet():\n    return \"hello\"\n\nasync def main():\n    result = greet()\n    print(result)\n\nasyncio.run(main())",
+        "out": "<coroutine object greet at 0x…>\n\n# + в stderr:\nRuntimeWarning: coroutine 'greet' was never awaited",
+        "bug": "Вызов `greet()` **не запускает** корутину — он создаёт объект корутины. Без `await` (или `create_task`/`gather`) тело функции никогда не выполняется, поэтому печатается `<coroutine object greet at 0x…>`, а не `hello`.\n\nПри выходе Python предупреждает: `RuntimeWarning: coroutine 'greet' was never awaited`. Правильно: `result = await greet()`.",
+        "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "time.sleep блокирует цикл событий",
+        "d": "hard",
+        "desc": "Внутри корутины стоит `time.sleep` вместо `asyncio.sleep`. Будет ли конкурентность?",
+        "python": "import asyncio\nimport time\n\nasync def work(name):\n    print(f\"{name} start\")\n    time.sleep(0.2)   # блокирующий!\n    print(f\"{name} done\")\n\nasync def main():\n    await asyncio.gather(work(\"A\"), work(\"B\"))\n\nasyncio.run(main())",
+        "out": "A start\nA done\nB start\nB done",
+        "bug": "`time.sleep` — **синхронный, блокирующий** вызов. Он не уступает управление циклу событий, а замораживает **весь поток**. Пока `A` спит в `time.sleep`, `B` даже не может стартовать — отсюда строго последовательный вывод и общее время ~0.4s вместо ~0.2s.\n\nВнутри `async` кода нельзя вызывать блокирующие функции напрямую: используй `await asyncio.sleep(...)`, а для честно блокирующего кода — `await asyncio.to_thread(...)` или executor.",
+        "src": "https://realpython.com/async-io-python/"
+      }
+    ]
+  }
+]
