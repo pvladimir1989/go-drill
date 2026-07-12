@@ -119,6 +119,24 @@
         "out": "A start\nA done\nB start\nB done",
         "bug": "`time.sleep` — **синхронный, блокирующий** вызов. Он не уступает управление циклу событий, а замораживает **весь поток**. Пока `A` спит в `time.sleep`, `B` даже не может стартовать — отсюда строго последовательный вывод и общее время ~0.4s вместо ~0.2s.\n\nВнутри `async` кода нельзя вызывать блокирующие функции напрямую: используй `await asyncio.sleep(...)`, а для честно блокирующего кода — `await asyncio.to_thread(...)` или executor.",
         "src": "https://realpython.com/async-io-python/"
+      },
+      {
+        "t": "gather не отменяет соседей при ошибке",
+        "d": "hard",
+        "desc": "`boom()` падает через 0.1s, `ok()` работает 0.2s. `gather` ловит ошибку — а что со второй корутиной?",
+        "python": "import asyncio\n\nasync def ok():\n    try:\n        await asyncio.sleep(0.2)\n        print(\"ok done\")\n    except asyncio.CancelledError:\n        print(\"ok cancelled\")\n        raise\n\nasync def boom():\n    await asyncio.sleep(0.1)\n    raise ValueError(\"boom\")\n\nasync def main():\n    try:\n        await asyncio.gather(ok(), boom())\n    except ValueError:\n        print(\"caught boom\")\n    await asyncio.sleep(0.3)\n    print(\"main end\")\n\nasyncio.run(main())",
+        "out": "caught boom\nok done\nmain end",
+        "bug": "Ключевая ловушка: `gather` при исключении **пробрасывает первую ошибку наружу**, но **не отменяет** остальные задачи — они продолжают работать в фоне. Поэтому ветка `except CancelledError` не срабатывает (`ok cancelled` не печатается), а `ok()` спокойно досыпает свои 0.2s и печатает `ok done` уже **после** `caught boom`.\n\nЭто прямая противоположность `asyncio.TaskGroup`, который при падении одной задачи отменяет всех соседей. Если нужна такая семантика у gather — отменяй задачи вручную или используй `TaskGroup`. Ещё нюанс: результаты остальных задач при этом теряются (см. `return_exceptions=True`).",
+        "src": "https://staskoltsov.medium.com/python-asyncio-interview-questions-answers-advanced-0bdb081520ba"
+      },
+      {
+        "t": "Исключение в fire-and-forget таске",
+        "d": "hard",
+        "desc": "`create_task` запускает корутину, которая падает. Но таску никто не `await`-ит. Упадёт ли программа?",
+        "python": "import asyncio\n\nasync def boom():\n    raise ValueError(\"boom\")\n\nasync def main():\n    asyncio.create_task(boom())\n    await asyncio.sleep(0.1)\n    print(\"main done\")\n\nasyncio.run(main())",
+        "out": "main done\n\n# в stderr:\n# Task exception was never retrieved\n# ValueError: boom\n# код возврата 0 — программа НЕ падает",
+        "bug": "`create_task` планирует `boom()`, та падает — но исключение живёт **внутри объекта Task**. Пока никто не сделает `await task` / `task.result()`, ошибка не пробрасывается в `main`. Программа печатает `main done` и завершается с кодом **0**; asyncio лишь **логирует** в stderr `Task exception was never retrieved` при уничтожении таски.\n\nОпасность: fire-and-forget задачи **молча теряют ошибки** — баг не роняет сервис, а тихо копится. Лечится: сохрани ссылку и `await`, собери через `gather`/`TaskGroup`, или повесь `task.add_done_callback(...)`, который проверит `task.exception()`.\n\n_(Заодно: ссылку на таску нужно держать — без неё её может собрать GC до завершения.)_",
+        "src": "https://staskoltsov.medium.com/python-asyncio-interview-questions-answers-advanced-0bdb081520ba"
       }
     ]
   },
@@ -179,6 +197,48 @@
         "out": "['A', 'B']\n\n# суммарно ~0.2s, а не 0.4s",
         "bug": "Это **лекарство** от ловушки «`time.sleep` блокирует цикл». `asyncio.to_thread` выполняет блокирующую функцию в **пуле потоков**, а `await` не даёт заморозить цикл событий. Оба вызова уходят в разные потоки и спят **параллельно** → общее время ~0.2s, а не 0.4s.\n\nТак оборачивают синхронные библиотеки (старые SDK, `requests`, драйверы БД без async), которые нельзя просто заменить на `await`. Для CPU-bound задач вместо потоков нужен `ProcessPoolExecutor` (из-за GIL).",
         "src": "https://habr.com/ru/articles/1011544/"
+      }
+    ]
+  },
+  {
+    "name": "🔧 Синхронизация и таймауты",
+    "icon": "🔧",
+    "problems": [
+      {
+        "t": "wait_for: таймаут отменяет корутину",
+        "d": "medium",
+        "desc": "`wait_for` с таймаутом 0.1s оборачивает корутину, которая спит 1s. Что напечатается?",
+        "python": "import asyncio\n\nasync def slow():\n    try:\n        await asyncio.sleep(1)\n        return \"done\"\n    except asyncio.CancelledError:\n        print(\"slow cancelled\")\n        raise\n\nasync def main():\n    try:\n        await asyncio.wait_for(slow(), timeout=0.1)\n    except asyncio.TimeoutError:\n        print(\"timeout!\")\n\nasyncio.run(main())",
+        "out": "slow cancelled\ntimeout!",
+        "bug": "`asyncio.wait_for` при истечении таймаута **отменяет** обёрнутую корутину — бросает в неё `CancelledError` в точке текущего `await` (здесь `sleep(1)`). Поэтому срабатывает `except` внутри `slow` (`slow cancelled`), корутина получает шанс на очистку, и лишь затем наружу поднимается `asyncio.TimeoutError` (`timeout!`).\n\nВажно: `slow` не досыпает секунду — таймаут прерывает её почти сразу. В Python 3.11+ `asyncio.TimeoutError` — это алиас встроенного `TimeoutError`.",
+        "src": "https://docs.python.org/3/library/asyncio-task.html#asyncio.wait_for"
+      },
+      {
+        "t": "asyncio.Lock сериализует доступ",
+        "d": "medium",
+        "desc": "Три воркера под общим `Lock`, каждый спит внутри секции. Могут ли их секции перекрыться?",
+        "python": "import asyncio\n\nlock = asyncio.Lock()\n\nasync def worker(n):\n    async with lock:\n        print(f\"{n} in\")\n        await asyncio.sleep(0.1)\n        print(f\"{n} out\")\n\nasync def main():\n    await asyncio.gather(worker(1), worker(2), worker(3))\n\nasyncio.run(main())",
+        "out": "1 in\n1 out\n2 in\n2 out\n3 in\n3 out",
+        "bug": "`async with lock` пускает в критическую секцию только **одну** корутину. Пока воркер 1 держит лок и спит, воркеры 2 и 3 ждут на входе — перекрытия `in`/`out` нет, секции строго последовательны.\n\nПорядок 1→2→3 — потому что лок выдаётся ожидающим в порядке очереди (FIFO), а `gather` запустил их в этом порядке. Сравни с `Semaphore(2)` из соседней задачи, где параллельно шли **две** корутины: `Lock` ≈ `Semaphore(1)`.",
+        "src": "https://docs.python.org/3/library/asyncio-sync.html#asyncio.Lock"
+      },
+      {
+        "t": "asyncio.Queue: producer / consumer",
+        "d": "medium",
+        "desc": "Продюсер кладёт 0,1,2 и sentinel `None`; консьюмер читает из очереди до `None`.",
+        "python": "import asyncio\n\nasync def producer(q):\n    for i in range(3):\n        await q.put(i)\n    await q.put(None)\n\nasync def consumer(q):\n    while True:\n        item = await q.get()\n        if item is None:\n            break\n        print(f\"got {item}\")\n\nasync def main():\n    q = asyncio.Queue()\n    await asyncio.gather(producer(q), consumer(q))\n\nasyncio.run(main())",
+        "out": "got 0\ngot 1\ngot 2",
+        "bug": "`await q.get()` приостанавливает консьюмера, пока очередь пуста, и будит его, когда продюсер сделал `put`. Порядок FIFO сохраняется → `0, 1, 2`. Значение `None` здесь — идиома **sentinel** («конец потока»): по нему консьюмер выходит из бесконечного цикла.\n\n`asyncio.Queue` — основа паттерна worker-pool: несколько консьюмеров разбирают одну очередь. С `Queue(maxsize=N)` появляется **backpressure** — при заполнении продюсер блокируется на `put`, не разгоняя память.",
+        "src": "https://docs.python.org/3/library/asyncio-queue.html#asyncio.Queue"
+      },
+      {
+        "t": "asyncio.Event: ожидание сигнала",
+        "d": "medium",
+        "desc": "Waiter ждёт события, setter выставляет его через 0.1s. В каком порядке печатают?",
+        "python": "import asyncio\n\nasync def waiter(event):\n    print(\"waiting\")\n    await event.wait()\n    print(\"go!\")\n\nasync def setter(event):\n    await asyncio.sleep(0.1)\n    print(\"setting\")\n    event.set()\n\nasync def main():\n    event = asyncio.Event()\n    await asyncio.gather(waiter(event), setter(event))\n\nasyncio.run(main())",
+        "out": "waiting\nsetting\ngo!",
+        "bug": "`await event.wait()` блокирует корутину, пока другой код не вызовет `event.set()`. Waiter печатает `waiting` и засыпает на `wait()`; setter через 0.1s печатает `setting` и ставит флаг — только тогда waiter просыпается и печатает `go!`.\n\nВ отличие от `Lock` (взаимное исключение), `Event` — про **однократную сигнализацию** между корутинами: «дождись, пока условие наступит». Флаг можно сбросить через `event.clear()`; все, кто ждёт на `wait()` в момент `set()`, просыпаются разом.",
+        "src": "https://docs.python.org/3/library/asyncio-sync.html#asyncio.Event"
       }
     ]
   },
