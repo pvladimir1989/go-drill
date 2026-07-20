@@ -1,6 +1,6 @@
 export type Lang = 'python' | 'go' | 'rust' | 'ts'
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug' | 'arch' | 'out'
+export type Tab = 'leet' | 'iv' | 'go' | 'rp' | 'bug' | 'arch' | 'out' | 'py'
 
 export interface ArchOption {
   t: string

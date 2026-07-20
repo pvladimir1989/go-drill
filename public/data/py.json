@@ -1,0 +1,395 @@
+[
+  {
+    "name": "Язык и типы",
+    "icon": "🧱",
+    "problems": [
+      {
+        "t": "Built-in data types & mutability",
+        "d": "easy",
+        "task": "What are Python's built-in data types and how are they categorized? Explain mutability and hashability.",
+        "info": "Types group into **Numeric** (`int`, `float`, `complex`, `bool`), **Sequence** (`str`, `list`, `tuple`, `range`), **Mapping** (`dict`), **Set** (`set`, `frozenset`), and **Other** (`bytes`, `bytearray`, `NoneType`).\n\nThe practical split is **mutability**: mutable (`list`, `dict`, `set`, `bytearray`) can change in place; immutable (`int`, `float`, `str`, `tuple`, `frozenset`, `bytes`) cannot — \"changing\" them creates a new object.\n\n**Hashability** decides dict-key / set-member eligibility: only immutable objects are hashable by default.\n\n```python\nd = {}\nd[(1, 2)] = \"ok\"   # tuple is hashable\nd[[1, 2]] = \"no\"    # TypeError: list is unhashable\n```\n\nChoose `tuple` over `list` to signal \"won't change\", `frozenset` when you need a set as a key, `dict` for O(1) lookup instead of a list of pairs.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "*args and **kwargs",
+        "d": "easy",
+        "task": "What are *args and **kwargs, and how do you use them?",
+        "info": "`*args` collects extra **positional** args into a tuple; `**kwargs` collects extra **keyword** args into a dict. The names are convention — the `*` / `**` are what matter.\n\nCorrect ordering: positional → `*args` → keyword-only → `**kwargs`.\n\n```python\ndef func(a, b, *args, kw_only, **kwargs):\n    print(a, b, args, kw_only, kwargs)\n\nfunc(1, 2, 3, 4, kw_only=\"x\", extra=\"y\")\n# 1 2 (3, 4) x {'extra': 'y'}\n```\n\nThey shine in **forwarding** (decorators, wrappers) and **unpacking at call sites**: `func(*lst, **dct)` spreads a list/dict into arguments. `**` also merges dicts: `{**defaults, **overrides}`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Lambda functions",
+        "d": "easy",
+        "task": "What are lambda functions and when should you use them?",
+        "info": "A `lambda` is an anonymous single-expression function — no statements, no assignments, no explicit `return`.\n\n```python\nsorted(users, key=lambda u: u[\"salary\"])   # inline sort key\nlist(map(lambda x: x * 2, nums))            # short callback\n```\n\n**Rule:** use `lambda` only for truly throwaway inline use. PEP 8 discourages assigning one to a variable — if you're naming it, use `def`. Lambdas show as `<lambda>` in stack traces (hard to debug) and can't hold docstrings. For anything non-trivial, a named function is more readable, testable, and reusable.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Global variables & risks",
+        "d": "medium",
+        "task": "What are global variables in Python and what are the risks of using them?",
+        "info": "A global is a name defined at module level. To **modify** it from a function you must declare `global x`:\n\n```python\ncount = 0\ndef inc():\n    global count\n    count += 1\n```\n\nRead-only globals (constants) are fine. **Mutable globals written from many functions** are the problem:\n- **Hidden dependencies** — the signature hides that state changes.\n- **Hard to test** — you must reset state between tests.\n- **Race conditions** — concurrent `count += 1` is not atomic.\n\n**Fix:** pass state explicitly as args, or contain it in a class. Reserve module-level `UPPER_CASE` names for true constants that never change.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Namespace vs scope",
+        "d": "medium",
+        "task": "What is a namespace and how does it relate to scope?",
+        "info": "A **namespace** is the name→object mapping (like a dict). A **scope** is the region of code where a namespace is directly reachable without a prefix. Every scope has a namespace; not every namespace is a scope.\n\nMain namespaces: **built-in** (interpreter start), **global** (module import), **local** (per function call), **enclosing** (nested-function closures).\n\nGotcha: **class namespaces are NOT in the LEGB chain** — you can't reach a class attribute by bare name inside a method:\n\n```python\nclass C:\n    x = 1\n    def m(self):\n        print(x)          # NameError\n        print(self.x)     # OK — must qualify\n```\n\n`globals()` is live (edits take effect); treat `locals()` as a read-only snapshot. Avoid `from m import *` to prevent silent name collisions.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "LEGB name resolution",
+        "d": "medium",
+        "task": "How does Python resolve variable names? Explain the LEGB rule.",
+        "info": "Python looks up a name in fixed order — **L**ocal → **E**nclosing → **G**lobal → **B**uilt-in — first match wins; none found → `NameError`.\n\n```python\nx = \"global\"\ndef outer():\n    x = \"enclosing\"\n    def inner():\n        x = \"local\"\n        print(x)    # local\n    inner()\n```\n\n`global` lets a function rebind a module-level name; `nonlocal` lets a nested function rebind an enclosing one.\n\n**Classic gotcha — `UnboundLocalError`:**\n```python\nx = 1\ndef f():\n    print(x)   # UnboundLocalError!\n    x = 2\n```\nScope is decided at **compile time**: because `x` is assigned anywhere in `f`, Python treats it as local for the whole function, so the `print` sees an unbound local — not the global.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "PYTHONPATH & environment setup",
+        "d": "easy",
+        "task": "What is PYTHONPATH and how do you manage Python environment setup in a project?",
+        "info": "`PYTHONPATH` is a colon-separated list of dirs prepended to `sys.path` at startup, making those modules importable without installation. In practice, fiddling with it is a **code smell** — it usually means packaging is wrong.\n\n**Clean setup:**\n```bash\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\npip install -e .          # editable install registers your package\n```\n\nDefine metadata/deps in `pyproject.toml` (not `setup.py`). Keep secrets in a `.env` loaded via `python-dotenv`, never hardcoded. Modern teams increasingly use **uv** (fast Rust-based pip+venv replacement with a lockfile). Reserve `PYTHONPATH` for edge cases.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Docstring conventions",
+        "d": "easy",
+        "task": "What are docstrings and what are the conventions for writing them well?",
+        "info": "A docstring is the first string literal in a module/class/function; it's stored in `__doc__` and shown by `help()`. One-line for simple functions; multi-line when there are params, returns, raises, or non-obvious behavior.\n\nThree styles: **Google** (`Args:`/`Returns:`/`Raises:` — most readable in source), **NumPy** (underlined headers, common in scientific libs), **reST** (`:param:`/`:returns:` — Sphinx default).\n\n```python\ndef fetch_user(user_id: int) -> dict | None:\n    \"\"\"Fetch a user by ID.\n\n    Args:\n        user_id: Unique identifier; must be non-negative.\n    Returns:\n        User dict, or None if not found.\n    Raises:\n        ValueError: If user_id is negative.\n    \"\"\"\n```\n\n`Example:` blocks can be run as tests via `doctest`. Type hints and docstrings are complementary — hints give types, docstrings give intent and edge cases.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  },
+  {
+    "name": "Головоломки вывода",
+    "icon": "🧩",
+    "problems": [
+      {
+        "t": "Class attribute inheritance",
+        "d": "medium",
+        "task": "Predict the output and explain it:\n\n```python\nclass Parent: x = 1\nclass Child1(Parent): pass\nclass Child2(Parent): pass\nprint(Parent.x, Child1.x, Child2.x)\nChild1.x = 2\nprint(Parent.x, Child1.x, Child2.x)\nParent.x = 3\nprint(Parent.x, Child1.x, Child2.x)\n```",
+        "info": "**Output:**\n```\n1 1 1\n1 2 1\n3 2 3\n```\n\nLookup follows the **MRO**: instance dict → own class dict → parent dicts. Until a child sets its own `x`, it resolves to `Parent.x`.\n\n- `1 1 1` — no child has its own `x`; all see `Parent.x = 1`.\n- `1 2 1` — `Child1.x = 2` writes `x` into **`Child1.__dict__`**, shadowing the parent. `Child2` still inherits.\n- `3 2 3` — `Parent.x = 3` updates the parent; `Child2` (no own `x`) now sees `3`, but `Child1` keeps its own `2`.\n\n**Lesson:** shared class-level state is dangerous — a parent change propagates to children that haven't overridden it. Prefer instance attributes set in `__init__` for per-object state.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Slice out of range",
+        "d": "easy",
+        "task": "What does this print, and why no error?\n\n```python\nlst = ['a','b','c','d','e']\nprint(lst[10:])\n```",
+        "info": "**Output:** `[]` — no `IndexError`.\n\nA single out-of-range index raises: `lst[10]` → `IndexError`. But slicing **clamps** start/stop to the valid range before cutting, so an out-of-range start simply means an empty range.\n\nThis is **dangerous** because the silent `[]` hides bugs:\n```python\ndef get_page(items, page, size=10):\n    return items[page*size:]   # page 999 → [] silently\n```\n\n**Guard** computed slice indices against `len()` instead of trusting the silent empty result.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Closure late binding",
+        "d": "medium",
+        "task": "Predict the output and explain:\n\n```python\ndef multipliers():\n    return [lambda x: i * x for i in range(4)]\nprint([m(2) for m in multipliers()])\n```",
+        "info": "**Output:** `[6, 6, 6, 6]` (not `[0, 2, 4, 6]`).\n\nClosures use **late binding**: `i` is looked up when the lambda is *called*, not when it's *defined*. By then the loop has finished and `i == 3`, so every lambda multiplies by 3 → `3 * 2 = 6`. (Same happens with `def`, not just `lambda`.)\n\n**Fix — bind at definition time** via a default arg:\n```python\ndef multipliers():\n    return [lambda x, i=i: i * x for i in range(4)]   # [0,2,4,6]\n```\n\nOr `functools.partial(operator.mul, i)`. Default-argument capture is the idiomatic fix.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Mutable default argument",
+        "d": "medium",
+        "task": "Predict the output and explain:\n\n```python\ndef extendList(val, lst=[]):\n    lst.append(val)\n    return lst\nlist1 = extendList(10)\nlist2 = extendList(123, [])\nlist3 = extendList('a')\nprint(list1); print(list2); print(list3)\n```",
+        "info": "**Output:**\n```\n[10, 'a']\n[123]\n[10, 'a']\n```\n\nDefault argument expressions are evaluated **once at definition time**, not per call. The same `[]` object is reused across every call that omits the argument — so `list1` and `list3` share it, while `list2` passed its own list.\n\n**Fix — sentinel pattern:**\n```python\ndef extendList(val, lst=None):\n    if lst is None:\n        lst = []\n    lst.append(val)\n    return lst\n```\n\nNever use a mutable default (`list`, `dict`, `set`). Use `None` and create the object inside the function.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "[[]] * 5 aliasing",
+        "d": "medium",
+        "task": "Predict each line and explain:\n\n```python\nlst = [[]] * 5\nlst[0].append(10)\nlst[1].append(20)\nlst.append(30)\nprint(lst)\n```",
+        "info": "**Output:**\n```\n[[], [], [], [], []]\n[[10], [10], [10], [10], [10]]\n[[10, 20], [10, 20], [10, 20], [10, 20], [10, 20]]\n[[10, 20], [10, 20], [10, 20], [10, 20], [10, 20], 30]\n```\n\n`[[]] * 5` does **not** create five lists — it creates **one** inner list and five references to it. Mutating `lst[0]` mutates the shared object, so all five change together. Only `lst.append(30)` adds to the outer list (a distinct operation).\n\n**Fix — create distinct inner lists with a comprehension:**\n```python\nlst = [[] for _ in range(5)]   # five independent objects\n```\n\nNever use `* N` to initialize a container of mutable objects.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  },
+  {
+    "name": "Операторы и структуры",
+    "icon": "⚙️",
+    "problems": [
+      {
+        "t": "/ vs // division",
+        "d": "easy",
+        "task": "What is the difference between / and // in Python 3?",
+        "info": "`/` is **true division** — always returns `float` (`5 / 2 == 2.5`).\n`//` is **floor division** — rounds toward negative infinity; return type follows operands (`5 // 2 == 2` int, `5.0 // 2.0 == 2.0` float).\n\nKey subtlety: `//` **floors**, it does not truncate toward zero:\n```python\n-7 // 2      # -4  (floor toward -inf)\nint(-7 / 2)  # -3  (truncate toward 0)\n```\n\nUse `math.trunc()` / `int()` when you specifically need truncation. (In Python 2, `/` did integer division for int operands — Python 3 removed that ambiguity. Add `from __future__ import division` to backport.)",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "__missing__ vs defaultdict",
+        "d": "medium",
+        "task": "Does this work as a defaultdict? What does __missing__ actually do?\n\n```python\nclass DefaultDict(dict):\n    def __missing__(self, key):\n        return []\nd = DefaultDict()\nd['florp'] = 127\n```",
+        "info": "It runs, but **doesn't behave like a defaultdict**. `__missing__` is called only by `dict.__getitem__` on a **missing key during read** — not on assignment. So `d['florp'] = 127` just sets the key normally; `__missing__` is never involved. Also, the implementation **returns** a default but **doesn't store it**, so repeated reads keep returning fresh empty lists.\n\n**Fix:** store before returning:\n```python\nclass DefaultDict(dict):\n    def __missing__(self, key):\n        self[key] = []\n        return self[key]\n```\n\n**Production:** use `collections.defaultdict(list)` instead — it handles this correctly and its factory can be any zero-arg callable (`list`, `int`, `set`). Reach for a custom `__missing__` only when the default depends on the key itself (e.g. `self[key] = key.upper()`).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Shallow vs deep copy",
+        "d": "medium",
+        "task": "What is the difference between shallow and deep copy?",
+        "info": "**Shallow** (`copy.copy`, `list[:]`, `dict.copy()`) makes a new container but fills it with **references** to the same inner objects. **Deep** (`copy.deepcopy`) recursively copies inner objects too, producing a fully independent tree.\n\nIt only matters when there are **mutable nested** objects:\n```python\nimport copy\noriginal = [[1, 2], [3, 4]]\nshallow = copy.copy(original)\ndeep = copy.deepcopy(original)\noriginal[0].append(99)\nprint(shallow[0])  # [1, 2, 99] — shared inner list\nprint(deep[0])     # [1, 2]      — independent\n```\n\nFor flat immutable data they're effectively identical. **Default to shallow**; use deep only when inner mutables must be independent. `deepcopy` is slow on large/nested structures (handles cycles too) — profile before using it in a hot path.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "List comp: evens at even indices",
+        "d": "easy",
+        "task": "Write a single list comprehension returning only even numbers located at even indices.",
+        "info": "```python\nlst = [1, 3, 5, 8, 10, 13, 18, 36, 78]\nresult = [x for x in lst[::2] if x % 2 == 0]\n# [10, 18, 78]\n```\n\n`lst[::2]` takes every element at an even index (step 2); the `if` then keeps only the even values. Conditions apply in sequence.\n\nA more explicit, extendable variant uses `enumerate`:\n```python\n[x for i, x in enumerate(lst) if i % 2 == 0 and x % 2 == 0]\n```",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Slicing",
+        "d": "easy",
+        "task": "How does Python slicing work? Cover start/stop/step and pitfalls.",
+        "info": "Syntax `seq[start:stop:step]` — start inclusive, stop exclusive, step controls stride/direction. Omitted parts default to `0` / `len(seq)` / `1`.\n\n```python\nlst = [0,1,2,3,4,5,6,7,8,9]\nlst[2:7]      # [2,3,4,5,6]\nlst[::2]      # [0,2,4,6,8]   every 2nd\nlst[::-1]     # reversed\nlst[7:2:-1]   # [7,6,5,4,3]  negative step\nlst[-3:]      # [7,8,9]      negative indices from end\n```\n\n**Pitfalls:** out-of-range slices **fail silently** (clamped, no error — hides bugs). Slices are **assignable** on mutables: `lst[1:4] = [20, 30]`. You can name slices with `slice()`. In **NumPy**, slices often return **views**, not copies — editing a slice edits the original array.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Reverse a list",
+        "d": "easy",
+        "task": "What are the ways to reverse a list, and when do you use each?",
+        "info": "Three options, differing on mutation and memory:\n\n- **`lst[::-1]`** — returns a new reversed list; original untouched. Use when you want a copy.\n- **`lst.reverse()`** — reverses **in place**, returns `None`. Use when mutating is intended.\n- **`reversed(lst)`** — returns a lazy **iterator**, no copy. Most memory-efficient; best for reverse iteration. `list(reversed(lst))` for a concrete copy.\n\n```python\nlst[::-1]            # new reversed copy\nfor x in reversed(lst): ...   # iterate, no allocation\n```\n\nStrings are immutable (no `.reverse()`): use `s[::-1]`. `reversed()` works on anything implementing `__reversed__`, or `__len__` + `__getitem__`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Flatten a nested list",
+        "d": "medium",
+        "task": "How do you flatten a nested list?",
+        "info": "**One level** — comprehension or `itertools`:\n```python\nnested = [[1,2],[3,4],[5,6]]\nflat = [x for sub in nested for x in sub]\nflat = list(itertools.chain.from_iterable(nested))   # lazy, preferred for big lists\n```\nAvoid the `sum(nested, [])` trick — it rebuilds the list on every `+`, O(n²)-ish.\n\n**Arbitrary depth** — recursive generator (exclude str/bytes so they aren't split into chars):\n```python\nfrom collections.abc import Iterable\ndef flatten(items):\n    for it in items:\n        if isinstance(it, Iterable) and not isinstance(it, (str, bytes)):\n            yield from flatten(it)\n        else:\n            yield it\n\nlist(flatten([1, [2, [3, [4]]], 6]))   # [1, 2, 3, 4, 6]\n```\n\nFor NumPy, use `arr.ravel()` (view) or `arr.flatten()` (copy).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Dictionary comprehensions",
+        "d": "easy",
+        "task": "How do dict comprehensions work, and when should you use them?",
+        "info": "`{key: value for item in iterable}` — the dict equivalent of a list comp.\n\n```python\nsquares = {n: n*n for n in range(6)}          # build\ndiscounted = {k: v*0.9 for k, v in prices.items()}  # transform\nexpensive = {k: v for k, v in prices.items() if v > 1}  # filter\ninverted = {v: k for k, v in prices.items()}   # invert (needs unique values)\nrecord = {k: v for k, v in zip(keys, values)}  # from two lists\n```\n\n**Readability rule:** use a comp when the transform is direct and you can read it in one breath. If it needs nested comps or complex conditionals, a plain `for` loop is clearer. Don't invert a dict with non-unique values (keys would collide).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Merge dictionaries",
+        "d": "easy",
+        "task": "What are the ways to merge dictionaries in Python?",
+        "info": "When keys conflict, the **rightmost value wins**.\n\n- **`a | b`** (3.9+) — new dict, non-mutating. Cleanest modern choice.\n- **`a |= b`** (3.9+) — mutates `a` in place.\n- **`{**a, **b}`** — unpacking, works on all Python 3, new dict.\n\n```python\ndefaults = {\"color\": \"blue\", \"size\": \"md\"}\nconfig  = {\"size\": \"lg\"}\ndefaults | config | {\"color\": \"red\"}   # chains cleanly\n```\n\n**Nested dicts** need a recursive merge — the operators only merge the **top level** (a nested dict value is replaced wholesale):\n```python\ndef deep_merge(base, over):\n    out = base.copy()\n    for k, v in over.items():\n        if isinstance(out.get(k), dict) and isinstance(v, dict):\n            out[k] = deep_merge(out[k], v)\n        else:\n            out[k] = v\n    return out\n```",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Generators vs list comprehensions",
+        "d": "medium",
+        "task": "What is a generator, and how does it differ from a list comprehension in memory?",
+        "info": "A generator uses `yield`; calling it returns a generator object without running the body yet. Execution resumes on each `next()`, and local state (vars, loop position) is preserved between yields.\n\n**Memory:** a list comp builds the **entire** list up front; a generator yields **one item at a time** and discards it, so memory stays flat regardless of dataset size.\n```python\ndef squares(n):\n    for i in range(n):\n        yield i * i\n```\n\n**Tradeoffs:** a generator is single-use (exhausts → `StopIteration`), has no random access (`gen[5]` → `TypeError`), and no `len()`. Use generators for streaming / large data / pipelines; use a list when you need to iterate multiple times, index, or know the length.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Iterable vs iterator",
+        "d": "medium",
+        "task": "What is the difference between an iterable and an iterator?",
+        "info": "**Iterable:** implements `__iter__()` → returns an iterator (lists, tuples, dicts, strings, files). Can produce a fresh iterator each time, so you can loop over it repeatedly.\n\n**Iterator:** implements `__iter__()` **and** `__next__()` → returns the next value or raises `StopIteration`. Usually **single-use** — once exhausted it can't reset.\n```python\nnums = [1,2,3]      # iterable\nit = iter(nums)     # iterator\nnext(it)            # 1\nnext(it)            # 2\n```\n\nA `for` loop is sugar for `it = iter(x); while True: try: v = next(it) except StopIteration: break`.\n\nA class-based iterator whose `__iter__` returns `self` **can't be iterated twice** (same exhausted object). To allow multiple passes, split iterable (returns fresh iterator) from iterator. **Generators are iterators** — they implement the whole protocol for you, so prefer them.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  },
+  {
+    "name": "ООП и модули",
+    "icon": "🏛",
+    "problems": [
+      {
+        "t": "Module vs package",
+        "d": "easy",
+        "task": "What is the difference between a module and a package in Python?",
+        "info": "A **module** is a single `.py` file. A **package** is a directory containing an `__init__.py` (which marks it as a package and often exposes a clean public API by re-importing selected names).\n\n```\nmypackage/\n    __init__.py\n    utils.py            # module\n    models/\n        __init__.py\n        user.py         # module in a sub-package\n```\n\n**Absolute imports** use the full path (`from mypackage.utils import helper`) — clearer, preferred. **Relative imports** are based on the current module's location (`from . import utils`) — useful for keeping a package internally self-contained if it's renamed/moved.\n\nPackages organize related modules, avoid name collisions, and scale large codebases. Prefer absolute imports by default.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Decorators",
+        "d": "medium",
+        "task": "What is a decorator and how does it work under the hood?",
+        "info": "A decorator is a callable that takes a function, wraps it with extra behavior, and returns a new callable. `@deco` is sugar for reassignment:\n```python\n@deco\ndef f(): ...\n# ==\ndef f(): ...\nf = deco(f)\n```\n\n```python\ndef deco(func):\n    def wrapper(*args, **kwargs):\n        print(\"before\")\n        result = func(*args, **kwargs)\n        print(\"after\")\n        return result\n    return wrapper\n```\n\n**Always use `functools.wraps`** — without it the wrapper steals the original's `__name__`/`__doc__`, breaking doc tools, `pytest`, stack traces, and `lru_cache`. Stacked decorators apply **bottom-up** but execute **top-down** at call time: `@a` / `@b` ⇒ `a(b(f))`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Context managers",
+        "d": "medium",
+        "task": "What are context managers and when would you use contextlib.contextmanager vs a class?",
+        "info": "A context manager implements `__enter__` / `__exit__`; the `with` block guarantees `__exit__` runs on normal exit, exception, or `return` — the standard pattern for resources (files, DB connections, locks).\n\n`__exit__` gets `(exc_type, exc_val, exc_tb)`; returning a truthy value **suppresses** the exception.\n\n**Class-based** (stateful, subclassable, complex exception handling):\n```python\nclass Conn:\n    def __enter__(self):\n        self.c = connect(); return self.c\n    def __exit__(self, *exc):\n        self.c.close()\n```\n\n**`@contextmanager`** (simple setup/teardown — setup before `yield`, teardown after, in `try/finally`):\n```python\n@contextmanager\ndef timer(label):\n    start = time.perf_counter()\n    try:\n        yield\n    finally:\n        print(f\"{label}: {time.perf_counter()-start:.3f}s\")\n```\n\nReach for the generator form for one-off simple cases; the class form for state across uses, inheritance, or fine-grained `__exit__` logic.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Real-world decorator use cases",
+        "d": "medium",
+        "task": "What are the most common real-world use cases for decorators beyond a timer?",
+        "info": "Decorators are the idiomatic tool for **cross-cutting concerns** — behavior applied across many functions without cluttering their core logic:\n\n- **Logging/auditing** — wrap calls with timing + arg/result/error logging so you don't duplicate try/except boilerplate everywhere.\n- **Access control** — `@require_role(\"admin\")` checks auth once and is applied declaratively (this is Flask's `@login_required`, Django's `@permission_required`, FastAPI's `Depends`).\n- **Caching** — `functools.lru_cache` for pure functions, or a custom **TTL cache** decorator when results expire (e.g. exchange rates refreshed every 60s — a feature the built-ins lack).\n\nThe payoff: define the behavior once, apply it everywhere consistently, and the wrapped function keeps its single responsibility. Same idea extends to rate limiting, retries, and transactions.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Inheritance & MRO",
+        "d": "hard",
+        "task": "What types of inheritance does Python support and how does the MRO work?",
+        "info": "Python supports **single**, **multiple**, **multilevel**, and **hierarchical** inheritance. The **MRO** (Method Resolution Order) is the lookup sequence across the hierarchy, computed by the **C3 linearization** algorithm: a class precedes its parents, and parent order in the definition is preserved.\n\n```python\nclass A:\n    def greet(self): return \"A\"\nclass B(A):\n    def greet(self): return super().greet() + \" via B\"\nclass C(A):\n    def greet(self): return super().greet() + \" via C\"\nclass D(B, C): pass\n\nprint(D().greet())   # \"A via C via B\"\nprint([c.__name__ for c in D.__mro__])  # ['D','B','C','A','object']\n```\n\nThis resolves the **diamond problem** cleanly: `A` is visited only once. Crucially, `super()` calls the **next class in the MRO**, not necessarily the direct parent — so inside `B`, `super()` calls `C`. That's why cooperative multiple inheritance works only when **every** class uses `super()` consistently; mixing `super()` with direct parent calls breaks the chain.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Descriptors",
+        "d": "hard",
+        "task": "What are descriptors, and how do property/classmethod use them?",
+        "info": "A descriptor is any object defining `__get__`, `__set__`, and/or `__delete__`. On attribute lookup, if the class (or a parent) holds a descriptor for that name, Python calls the descriptor's protocol methods instead of returning the raw attribute.\n\nBuilt-ins are descriptors: `property` (wraps getter/setter/deleter), `classmethod` (`__get__` passes the class), `staticmethod` (`__get__` returns the plain function unbound).\n\n- **Data descriptor** — defines `__get__` + (`__set__`|`__delete__`); wins over the instance `__dict__`.\n- **Non-data descriptor** — only `__get__`; the instance `__dict__` wins.\n\n```python\nclass Positive:\n    def __set_name__(self, owner, name): self.name = name\n    def __get__(self, obj, objtype=None): return getattr(obj, f\"_{self.name}\")\n    def __set__(self, obj, value):\n        if value < 0: raise ValueError(f\"{self.name} must be positive\")\n        setattr(obj, f\"_{self.name}\", value)\n\nclass Product:\n    price = Positive()   # reusable validated attribute\n```\n\nReach for a custom descriptor only when the same validation/access logic must be **reused across multiple classes**; otherwise `property` is enough. Descriptors add per-access indirection (a cost in hot paths) and make debugging less transparent.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  },
+  {
+    "name": "Внутренности и память",
+    "icon": "🔧",
+    "problems": [
+      {
+        "t": "The GIL",
+        "d": "medium",
+        "task": "What is Python's GIL and how do you work around it?",
+        "info": "The **Global Interpreter Lock** is a mutex in CPython letting only **one thread run Python bytecode at a time**, even on many cores. It exists to protect reference counting from races.\n\nImpact by workload:\n- **CPU-bound** (number crunching, crypto): threads give no real parallelism — they contend for the GIL and can even slow down.\n- **I/O-bound** (network, disk, DB): threads work fine — the GIL is **released during I/O waits**, so other threads run.\n\n**Workarounds:** `multiprocessing` (separate interpreter + GIL per process → true parallelism, but heavier memory/IPC); `asyncio` (single-threaded I/O concurrency, no GIL contention); C extensions like NumPy/Cython that **release the GIL** during heavy compute; and the experimental **free-threaded mode** in Python 3.13 (PEP 703) that removes the GIL entirely.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Memory management internals",
+        "d": "hard",
+        "task": "How does Python manage memory internally?",
+        "info": "All objects live in a **private heap** controlled by the interpreter. Allocation is layered:\n- **OS** → raw memory via `malloc`/`free`.\n- **pymalloc** — Python's allocator for **small objects (<512 bytes)**, the majority. It carves **arenas** (256 KB) into **pools** (4 KB, fixed size-class) into **blocks**. This cuts fragmentation and `malloc` overhead.\n- **Per-type allocators** for `int`/`list`/`dict`.\n\nQuirk — **integer caching**: small ints (`-5..256`) are singletons, so `a = 256; b = 256; a is b` is `True`, but `257` is `False`. Always compare values with `==`.\n\nPython's footprint can look high because pymalloc **retains freed memory in pools** rather than returning it to the OS immediately. Inspect with `tracemalloc` or `memory_profiler`. Unlike C, you never `malloc`/`free` manually — the cost is less control over when memory is released.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Garbage collection",
+        "d": "hard",
+        "task": "How does Python's garbage collector work?",
+        "info": "Two complementary mechanisms:\n\n**1. Reference counting (primary).** Every object has a refcount; when it hits 0 the object is freed **immediately and deterministically**. `sys.getrefcount(a)` shows it (plus its own temporary arg ref).\n\n**Limitation:** it can't break **cyclic** references — `a.ref = b; b.ref = a` leaves each refcount at 1 even after `del a, del b`, leaking memory.\n\n**2. Cyclic GC (secondary).** `gc` runs a **generational** collector (gen 0/1/2) that detects and breaks cycles. Based on the generational hypothesis (most objects die young), it collects young gens often and old gens rarely.\n\n```python\nimport gc\ngc.collect()              # manual full sweep\ngc.get_threshold()        # (700, 10, 10) by default\ngc.set_threshold(1000, 15, 15)  # tune for latency-sensitive apps\ngc.disable()              # batch scripts with no cycles\n```\n\nFor leak hunting use `tracemalloc`: snapshot, run code, compare top lines. In long-running servers, disabling the cyclic GC and calling `gc.collect()` at controlled points can cut latency spikes.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "asyncio & concurrency vs parallelism",
+        "d": "medium",
+        "task": "How does the asyncio event loop work? What is concurrency vs parallelism?",
+        "info": "A **coroutine** (`async def`) can pause at an `await` and yield control back without blocking the thread. The **event loop** is a single-threaded scheduler: it keeps a queue of ready coroutines, runs one until it hits `await`, then switches to another; when I/O completes (via `select`/`epoll`/`kqueue`), the paused coroutine resumes where it left off.\n\n**Concurrency ≠ parallelism.** `asyncio` gives **concurrency** — many tasks in progress, but only one running at any instant. **Parallelism** (true simultaneous execution across cores) needs `multiprocessing` or `loop.run_in_executor()`.\n\n```python\nasync def fetch(name, delay):\n    await asyncio.sleep(delay)\n    print(f\"{name} done\")\n\nawait asyncio.gather(fetch(\"A\", 2), fetch(\"B\", 1))  # B finishes first\n```\n\n**Where it fails:** CPU-bound work **blocks the whole loop** (nothing else runs while it holds the thread); calling a blocking sync function inside a coroutine stalls everything. Use it for I/O-heavy, high-concurrency workloads.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Multithreading vs multiprocessing",
+        "d": "medium",
+        "task": "When should you use multithreading vs multiprocessing in Python?",
+        "info": "**Threads** for **I/O-bound** work (network, DB, files): the GIL is released during I/O waits, so threads overlap their waiting effectively. Lightweight, share memory, but need locking for shared mutable state.\n\n**Processes** for **CPU-bound** work (image processing, numerics): each process has its own interpreter + GIL, so they run in **true parallel** across cores. Heavier startup, communicate via IPC (pipes/queues), fully isolated.\n\nA third option for I/O is **`asyncio`** — single-threaded concurrency with no GIL contention; preferred for high-concurrency I/O in modern Python.\n\nDecision shortcut: I/O-bound → threads or asyncio; CPU-bound → multiprocessing. Don't treat them as interchangeable — the tradeoffs (memory, IPC, synchronization complexity) matter at scale.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  },
+  {
+    "name": "Практическое кодирование",
+    "icon": "🚀",
+    "problems": [
+      {
+        "t": "Smallest non-representable subset sum",
+        "d": "hard",
+        "task": "Find the smallest positive integer that cannot be represented as a sum of any subset of a given list.",
+        "info": "The brute force enumerates all 2ⁿ subsets — correct but exponential. The **greedy** approach is O(n log n).\n\nSort, then maintain `reach` = the largest value such that everything `1..reach` is representable. For each `x` in sorted order:\n- if `x <= reach + 1`, it extends the range to `reach + x`;\n- if `x > reach + 1`, there's a gap → `reach + 1` is the answer.\n\n```python\ndef least_non_representable(nums: list[int]) -> int:\n    nums.sort()\n    reach = 0\n    for x in nums:\n        if x > reach + 1:\n            break\n        reach += x\n    return reach + 1\n\nleast_non_representable([1, 2, 5, 7])    # 4\nleast_non_representable([1, 2, 3, 4])    # 11\nleast_non_representable([2, 3, 4])       # 1  (no 1 ⇒ can't form 1)\n```\n\n**Why it works:** if `1..reach` are all formable and the next `x ≤ reach+1`, then `x..(reach+x)` become formable too; if `x > reach+1`, nothing downstream (all ≥ x) can fill the gap at `reach+1`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "State machine for lifecycle validation",
+        "d": "medium",
+        "task": "Implement a state machine validating a task lifecycle sequence.",
+        "info": "Model states as an `Enum` and valid transitions as a dict of sets, then walk the sequence rejecting any step not in the allowed set.\n\n```python\nimport enum\nfrom collections.abc import Iterable\n\nclass TaskStatus(enum.Enum):\n    CREATED = \"CREATED\"\n    IN_PROGRESS = \"IN_PROGRESS\"\n    DONE = \"DONE\"\n    CANCELED = \"CANCELED\"\n\nVALID = {\n    TaskStatus.CREATED:     {TaskStatus.IN_PROGRESS, TaskStatus.CANCELED},\n    TaskStatus.IN_PROGRESS: {TaskStatus.DONE, TaskStatus.CANCELED},\n    TaskStatus.DONE:        set(),\n    TaskStatus.CANCELED:    set(),\n}\n\ndef is_valid_sequence(seq: Iterable[TaskStatus]) -> bool:\n    seq = list(seq)\n    if not seq or seq[0] is not TaskStatus.CREATED:\n        return False\n    cur = seq[0]\n    for nxt in seq[1:]:\n        if nxt not in VALID[cur]:\n            return False\n        cur = nxt\n    return True\n```\n\nEmpty sequences are invalid; a lifecycle must start at `CREATED`. Terminal states (`DONE`, `CANCELED`) have no outgoing transitions.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Token-bucket rate limiter (decorator)",
+        "d": "hard",
+        "task": "Implement a token-bucket rate limiter as a Python decorator.",
+        "info": "A naive fixed-interval sleep blocks every caller and can't allow bursts. A **token bucket** refills tokens at a steady rate up to `burst`, consumes one per call, and lets the bucket start full so short bursts are allowed while the steady-state rate is enforced.\n\n```python\nimport time, threading, functools\n\ndef rate_limit(calls_per_second: float, burst: int | None = None):\n    capacity = float(burst or calls_per_second)\n    interval = 1.0 / calls_per_second\n    lock = threading.Lock()\n    state = {\"tokens\": capacity, \"last\": time.monotonic()}\n\n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            while True:\n                with lock:\n                    now = time.monotonic()\n                    state[\"tokens\"] = min(\n                        capacity,\n                        state[\"tokens\"] + (now - state[\"last\"]) * calls_per_second,\n                    )\n                    state[\"last\"] = now\n                    if state[\"tokens\"] >= 1:\n                        state[\"tokens\"] -= 1\n                        break\n                    wait = (1 - state[\"tokens\"]) / calls_per_second\n                time.sleep(wait)   # sleep outside the lock\n            return func(*args, **kwargs)\n        return wrapper\n    return decorator\n```\n\nNote the lock is released during `sleep` so other callers aren't serialized. With `burst=5`, the first five calls run immediately; afterward they space to one per `interval`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Unit testing async functions",
+        "d": "hard",
+        "task": "How do you unit test an async function that depends on external I/O (e.g. aiohttp + a Unix socket)?",
+        "info": "The challenge: the function touches a real socket/Docker daemon unavailable in tests. **Mock `aiohttp.UnixConnector` and `aiohttp.ClientSession`** so it never does real I/O, and drive the coroutine with **`pytest-asyncio`**.\n\n```python\nimport pytest\nfrom unittest.mock import AsyncMock, MagicMock, patch\n\n@pytest.mark.asyncio\nasync def test_logs_prints_each_line():\n    fake = [b\"line one\\n\", b\"line two\\n\"]\n    content = AsyncMock()\n    content.__aiter__ = MagicMock(return_value=iter(fake))\n    resp = AsyncMock()\n    resp.__aenter__.return_value.content = content\n    session = AsyncMock()\n    session.__aenter__.return_value.get.return_value = resp\n\n    with patch(\"aiohttp.UnixConnector\"), \\\n         patch(\"aiohttp.ClientSession\", return_value=session), \\\n         patch(\"builtins.print\") as mock_print:\n        await logs(\"abc\", \"my_container\")\n\n    assert mock_print.call_count == 2\n```\n\n**Why async is harder:** coroutines must be awaited; `async with` / `async for` need `AsyncMock` + `__aiter__` setup (no sync equivalent); each test needs a fresh event loop. `@pytest.mark.asyncio` runs the coroutine in a managed loop, and `asyncio_mode = \"auto\"` in `pyproject.toml` drops the need to mark every test. Also cover: empty stream, mid-stream termination, and connection errors raised by the mock.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Concurrent fetch with aiohttp",
+        "d": "medium",
+        "task": "How do you fetch multiple URLs concurrently with aiohttp?",
+        "info": "Split into `fetch_one` (one request, with error handling) and `fetch_all` (schedule them all with `asyncio.gather`). Use an **`asyncio.Semaphore`** to cap concurrent connections.\n\n```python\nimport asyncio, aiohttp\n\nasync def fetch_one(session, url, sem):\n    async with sem:\n        try:\n            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as r:\n                r.raise_for_status()\n                return {\"url\": url, \"status\": r.status, \"body\": await r.text()}\n        except aiohttp.ClientResponseError as e:\n            return {\"url\": url, \"status\": e.status, \"error\": str(e)}\n        except (aiohttp.ClientConnectionError, asyncio.TimeoutError) as e:\n            return {\"url\": url, \"status\": None, \"error\": str(e)}\n\nasync def fetch_all(urls, max_concurrent=10):\n    sem = asyncio.Semaphore(max_concurrent)\n    async with aiohttp.ClientSession() as s:\n        return await asyncio.gather(*(fetch_one(s, u, sem) for u in urls))\n```\n\n**Why the semaphore matters:** without it, 1000 URLs open 1000 connections — exhausting file descriptors, hammering the server, risking rate limits/bans. Errors are handled *inside* `fetch_one` so `gather` never raises. In production add per-URL retries, `TCPConnector(limit=N)` as an alternative limiter, and stream large bodies with `resp.content.read(chunk)`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Thread-safe singleton",
+        "d": "medium",
+        "task": "How do you implement a thread-safe singleton in Python?",
+        "info": "The naive `__new__` has a **check-then-act race**: two threads can both see `_instance is None` before either finishes creating it, yielding two instances. Fix with **double-checked locking**:\n\n```python\nimport threading\n\nclass Singleton:\n    _instance = None\n    _lock = threading.Lock()\n\n    def __new__(cls, *args, **kwargs):\n        if cls._instance is None:                 # outer: skip lock once built\n            with cls._lock:\n                if cls._instance is None:          # inner: handle the race\n                    cls._instance = super().__new__(cls)\n        return cls._instance\n```\n\nThe outer check avoids lock overhead on the hot path; the inner check closes the window where two threads both passed the outer check.\n\n**Most Pythonic option:** a **module-level instance** — Python's import system holds a module lock, so module objects are inherently thread-safe singletons. Prefer this when you control the module. **Caveat:** singletons hurt testability (global state) and hide dependencies — dependency injection is often cleaner in larger codebases.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Retry with exponential backoff",
+        "d": "medium",
+        "task": "Implement a retry decorator with exponential backoff.",
+        "info": "Catch specific exceptions, double the delay each attempt, add **jitter** (so concurrent clients don't retry in lockstep — the thundering herd), and cap the delay.\n\n```python\nimport time, random, functools\n\ndef retry(max_attempts=3, base_delay=1.0, max_delay=30.0, exceptions=(Exception,)):\n    def decorator(func):\n        @functools.wraps(func)\n        def wrapper(*args, **kwargs):\n            for attempt in range(1, max_attempts + 1):\n                try:\n                    return func(*args, **kwargs)\n                except exceptions as e:\n                    if attempt == max_attempts:\n                        raise\n                    delay = min(base_delay * (2 ** (attempt - 1)), max_delay)\n                    wait = delay + random.uniform(0, delay * 0.1)   # jitter\n                    time.sleep(wait)\n        return wrapper\n    return decorator\n```\n\nBackoff (base 0.5): 0.5 → 1.0 → 2.0 → raise. **Don't retry** non-idempotent ops (payment, insert) without idempotency keys, nor client errors (4xx — they won't succeed). In tight high-throughput systems, prefer a **circuit breaker** over blind retries to avoid amplifying load on a struggling downstream.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Stream a large CSV",
+        "d": "medium",
+        "task": "How do you process a large CSV without loading it into memory?",
+        "info": "Read row-by-row and process in **chunks**, discarding each chunk — memory stays flat regardless of file size.\n\n```python\nimport csv\n\ndef streaming_column_stats(filepath, column, chunk_size=1000, skip_errors=False):\n    total = count = skipped = 0\n    chunk = []\n    with open(filepath, newline=\"\", encoding=\"utf-8\") as f:\n        reader = csv.DictReader(f)\n        for row in reader:\n            try:\n                chunk.append(float(row[column].strip()))\n            except ValueError:\n                if skip_errors:\n                    skipped += 1; continue\n                raise\n            if len(chunk) == chunk_size:\n                total += sum(chunk); count += len(chunk); chunk = []\n        if chunk:\n            total += sum(chunk); count += len(chunk)\n    return {\"total\": total, \"count\": count,\n            \"average\": total / count if count else 0.0, \"skipped\": skipped}\n```\n\n**pandas equivalent** (often faster for numeric work): `for chunk in pd.read_csv(path, chunksize=500): ...`. Each chunk is vectorized then discarded. Use the stdlib `csv` when you want minimal deps; use pandas when you want vectorized speed and already depend on it.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Profiling & bottlenecks",
+        "d": "medium",
+        "task": "How do you identify and fix performance bottlenecks in a Python app?",
+        "info": "**Always measure first — don't guess.** Start with `cProfile` (function-level) and `timeit` (microbenchmarks):\n```python\nimport cProfile, pstats\npr = cProfile.Profile(); pr.enable()\nrun_app()\npr.disable()\npstats.Stats(pr).sort_stats(\"cumulative\").print_stats(20)\n```\nSorting by **cumulative** time finds the functions costing the most total time. For a running process you can't restart, attach **py-spy** (sampling, no code changes); for memory, **memory_profiler** / **tracemalloc**.\n\nCommon fixes:\n- **Slow loops** → vectorize with NumPy/pandas (runs in C).\n- **`+=` on strings in a loop** → `\"\".join(parts)` (strings are immutable).\n- **N+1 queries** → batch (`get_users_batch(ids)`).\n- **Repeated expensive pure calls** → `@functools.lru_cache`.\n- **CPU-bound hot path** → `multiprocessing`, or a C extension (Cython/ctypes).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Multiprocessing parallelism",
+        "d": "medium",
+        "task": "How do you use multiprocessing to achieve true parallelism?",
+        "info": "`multiprocessing` sidesteps the GIL: each process has its own interpreter + memory, so CPU work runs in genuine parallel. Use `Pool` to fan out over many items:\n\n```python\nfrom multiprocessing import Pool, Process, Queue\n\ndef square(n): return n * n\n\nwith Pool(processes=4) as pool:\n    print(pool.map(square, range(10)))   # blocks, in-order\n    # pool.imap(...)     # lazy iterator, lower memory\n    # pool.starmap(...)  # unpacks arg tuples\n```\n\nProcesses don't share memory, so communicate via **`Queue`/`Pipe`** (use `None` as an end sentinel), or shared `Value`/`Array` (needs locks — minimize these).\n\n**Pitfalls:** functions passed to `Pool` must be **picklable** (no lambdas/closures); on **Windows** the launch code must be under `if __name__ == \"__main__\":` to avoid recursive spawning; startup is costly, so multiprocessing only pays off for long-running CPU work. For I/O, use asyncio/threads instead.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "pytest fixtures & parametrize",
+        "d": "medium",
+        "task": "How do pytest fixtures and @pytest.mark.parametrize work?",
+        "info": "A **fixture** (`@pytest.fixture`) provides setup/resources by name; a test requests it as a parameter and pytest injects it. Teardown goes after a `yield`, keeping setup+teardown together.\n\n**Scope** controls reuse: `function` (default, per test), `class`, `module`, `session` (whole run) — pick the widest scope that's still correct to avoid repeated expensive setup.\n\n```python\n@pytest.fixture(scope=\"module\")\ndef db():\n    conn = create_connection()\n    yield conn            # test runs here\n    conn.close()\n\n@pytest.mark.parametrize(\"value, expected\", [(2, 4), (3, 9), (-4, 16), (0, 0)])\ndef test_square(value, expected):\n    assert value ** 2 == expected\n```\n\n`parametrize` runs the same test across many inputs (each gets its own pass/fail). Fixtures and `parametrize` combine naturally: the fixture supplies shared setup, `parametrize` varies the inputs. Versus `unittest`, pytest needs no class inheritance, scoping is explicit, and teardown lives next to setup.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Flask routing & request handling",
+        "d": "easy",
+        "task": "How do routing and request handling work in Flask?",
+        "info": "Routes map URLs to functions via `@app.route`. Flask calls the matched function and returns its response.\n\n```python\nfrom flask import Flask, request, jsonify, abort\napp = Flask(__name__)\n\n@app.route(\"/users/<int:user_id>\")\ndef get_user(user_id):\n    user = db.find(user_id)\n    if user is None:\n        abort(404)\n    return jsonify(user)\n\n@app.route(\"/users\", methods=[\"GET\", \"POST\"])\ndef users():\n    if request.method == \"GET\":\n        return jsonify(db.find_all(role=request.args.get(\"role\")))\n    data = request.get_json()\n    if not data or \"name\" not in data:\n        abort(400, description=\"name is required\")\n    return jsonify(db.create(data)), 201   # 201 = created\n```\n\nURL **converters** like `<int:user_id>` cast/validate (bad value → 404); built-ins are `string`, `int`, `float`, `path`, `uuid`. Query params come from `request.args`; JSON bodies from `request.get_json()`. For larger apps, split routes into **Blueprints** (`url_prefix=...`) to avoid circular imports. Flask is a micro-framework — DB/auth/validation are left to extensions. For APIs needing auto-validation + docs, **FastAPI** is now a common choice.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Evaluating an ML model",
+        "d": "medium",
+        "task": "How do you properly evaluate an ML model with train/test splits and cross-validation?",
+        "info": "A **train/test split** trains on one portion, evaluates on unseen data to measure generalization. `stratify=y` keeps class proportions balanced (critical for imbalanced data); `random_state` makes it reproducible.\n\n```python\nfrom sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold\nX_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)\nmodel.fit(X_tr, y_tr)\n```\n\nA single split is high-variance — the score depends on which samples land where. **K-fold CV** mitigates this: split into k folds, train k times holding out a different fold each time, average.\n```python\ncv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)\nscores = cross_val_score(model, X, y, cv=cv, scoring=\"accuracy\")\n# scores.mean() → robust estimate; scores.std() → stability\n```\n\n**Never tune on the test set** — that leaks information. Use a 3-way train/validation/test split or **nested CV** for hyperparameters (`GridSearchCV` does its own internal CV on the training data only).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Web scraping (requests + BeautifulSoup)",
+        "d": "easy",
+        "task": "How do you scrape web pages in Python using requests and BeautifulSoup?",
+        "info": "`requests` fetches the page; `BeautifulSoup` parses the HTML. Add a `User-Agent`, check `raise_for_status()`, and **guard every selector against missing elements** (pages change silently — `None.get_text()` crashes).\n\n```python\nimport requests\nfrom bs4 import BeautifulSoup\n\ndef scrape_articles(url):\n    r = requests.get(url, headers={\"User-Agent\": \"Mozilla/5.0\"}, timeout=10)\n    r.raise_for_status()\n    soup = BeautifulSoup(r.text, \"html.parser\")\n    out = []\n    for card in soup.select(\"div.article-card\"):\n        title = card.select_one(\"h2.title\")\n        link = card.select_one(\"a\")\n        out.append({\n            \"title\": title.get_text(strip=True) if title else None,\n            \"url\": link[\"href\"] if link else None,\n        })\n    return out\n```\n\n**Pagination:** loop following the `a.next-page` href until it's gone. **JS-rendered** content that `requests` can't see needs **Playwright/Selenium** (drive a real browser, then hand the HTML back to BeautifulSoup). **Ethics:** respect `robots.txt` and `Crawl-delay`, add delays, and prefer an official API when one exists.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Module introspection",
+        "d": "easy",
+        "task": "How do you inspect and list the contents of a Python module at runtime?",
+        "info": "`dir()` lists all names in a module's namespace (functions, classes, vars, imports) but says nothing about what each is. Use **`inspect`** for detail.\n\n```python\nimport inspect, some_module\n\n# functions + their signatures\nfor name, fn in inspect.getmembers(some_module, inspect.isfunction):\n    print(name, inspect.signature(fn))\n\n# only functions DEFINED in this module (exclude imports)\nown = [n for n, o in inspect.getmembers(some_module, inspect.isfunction)\n        if o.__module__ == some_module.__name__]\n\n# deeper: source, docstring, parameter annotations\ninspect.getsource(some_module.some_function)\ninspect.signature(some_module.some_function).parameters.items()\n```\n\n`inspect.isfunction` matches `def` functions only (not builtins/imported callables); check `o.__module__` to filter out imports. Use cases: plugin systems (discover handlers dynamically), auto-CLI tools (`fire`/`click`), test discovery (`pytest`), and doc generation (`sphinx`).",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      },
+      {
+        "t": "Essential pandas DataFrame ops",
+        "d": "easy",
+        "task": "What are the most important pandas DataFrame operations every developer should know?",
+        "info": "Core ops: **select**, **filter**, **handle missing values**, **group/aggregate**, and **merge**.\n\n```python\nimport pandas as pd\ndf = pd.DataFrame({\"name\": [\"A\",\"B\",\"C\"], \"dept\": [\"Eng\",\"Eng\",\"HR\"], \"salary\": [95, 82, None]})\n\ndf[\"salary\"]                       # Series\ndf[[\"name\", \"salary\"]]            # DataFrame\ndf.loc[0]; df.iloc[0]              # row by label / by position\n\ndf[df[\"salary\"] > 80]              # filter\ndf[(df.dept == \"Eng\") & (df.salary > 80)]   # compound mask\n\ndf[\"salary\"].fillna(df[\"salary\"].mean())   # impute\ndf.dropna(subset=[\"salary\"])               # drop missing\n\ndf.groupby(\"dept\")[\"salary\"].mean()        # aggregate\ndf.groupby(\"dept\").agg(avg=(\"salary\",\"mean\"), n=(\"name\",\"count\"))\n\nmerged = df.merge(other, on=\"name\", how=\"left\")   # SQL join\n```\n\n**Pitfalls:** `iterrows()` is slow — use vectorized ops or `apply`. Chained indexing `df[\"col\"][0]` can warn/mislead — use `df.loc[0, \"col\"]`. Watch dtypes (`NaN` forces int→float64, wasting memory). For huge files, stream with `pd.read_csv(chunksize=N)`.",
+        "src": "https://www.toptal.com/developers/python/interview-questions"
+      }
+    ]
+  }
+]

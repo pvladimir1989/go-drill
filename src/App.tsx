@@ -25,6 +25,7 @@ const TABS: { k: Tab; l: string }[] = [
   { k: 'bug', l: '🐛 Найди баг' },
   { k: 'arch', l: '🏛 Архитектура' },
   { k: 'out', l: '📟 Что выведет' },
+  { k: 'py', l: '🐍 Python Q&A' },
 ]
 const RATIOS = [{ l: '20%', v: 0.2 }, { l: '35%', v: 0.35 }, { l: '55%', v: 0.55 }]
 const GRANS: { k: Gran; l: string }[] = [{ k: 'tok', l: 'слова' }, { k: 'line', l: 'строки' }]
@@ -363,6 +364,39 @@ export default function App() {
                   {selP.src && <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #1a1a1f' }}><a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none' }}>📎 источник: {selP.src.replace(/^https?:\/\//, '')} ↗</a></div>}
                 </aside>
               )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // ---------- PYTHON Q&A (toptal: question → reveal answer) ----------
+  if (tab === 'py' && selP.task) {
+    return (
+      <div style={BS}>
+        <div style={{ padding: `${mob ? 10 : 12}px ${px}px`, borderBottom: '1px solid #1a1a1f', display: 'flex', alignItems: 'center', gap: mob ? 8 : 12, background: '#0f0f14', position: 'sticky', top: 0, zIndex: 10 }}>
+          <button onClick={() => setSelP(null)} style={{ background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: mob ? '6px 10px' : '4px 10px', fontSize: 12, fontFamily: 'inherit' }}>←</button>
+          <span style={{ fontSize: mob ? 13 : 15, flex: 1, minWidth: 0, fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🐍 {selP.t}</span>
+          <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, background: DC[selP.d].bg, color: DC[selP.d].t, border: `1px solid ${DC[selP.d].b}` }}>{selP.d}</span>
+        </div>
+        <div style={{ maxWidth: 820, margin: '0 auto', padding: `${mob ? 16 : 28}px ${px}px` }}>
+          <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#38bdf8', fontWeight: 600, marginBottom: 6 }}>Вопрос · Python</div>
+          <div style={{ fontSize: mob ? 14.5 : 16, color: '#e8e6e3', fontWeight: 500, lineHeight: 1.5 }}><Md src={selP.task} /></div>
+          {!solOpen ? (
+            <div style={{ marginTop: 24, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button onClick={() => setSolOpen(true)} style={{ padding: '10px 18px', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', background: '#38bdf8', color: '#000', border: 'none', fontWeight: 600 }}>Показать ответ →</button>
+              <span style={{ fontSize: 12, color: '#555' }}>сначала сформулируй свой ответ вслух, потом сверься</span>
+              {selP.src && <a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none', marginLeft: 'auto' }}>источник ↗</a>}
+            </div>
+          ) : (
+            <div style={{ marginTop: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1.2, color: '#4ade80', fontWeight: 600 }}>✅ Ответ</span>
+                <button onClick={() => setSolOpen(false)} style={{ marginLeft: 'auto', background: 'none', border: '1px solid #222', borderRadius: 6, color: '#888', cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontFamily: 'inherit' }}>Скрыть</button>
+              </div>
+              <div style={{ fontSize: mob ? 13.5 : 14, color: '#cfcfcf', lineHeight: 1.65 }}><Md src={selP.info ?? ''} /></div>
+              {selP.src && <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #1a1a1f' }}><a href={selP.src} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#666', textDecoration: 'none' }}>📎 источник: {selP.src.replace(/^https?:\/\//, '').replace(/\/$/, '')} ↗</a></div>}
             </div>
           )}
         </div>
